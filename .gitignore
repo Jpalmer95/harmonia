@@ -1,0 +1,4 @@
+/target
+/renders/*.wav
+*.rs.bk
+.DS_Store

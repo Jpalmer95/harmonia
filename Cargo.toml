@@ -1,0 +1,20 @@
+[package]
+name = "harmonia"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jonathan Korstad", "Hermes Agent"]
+description = "Hi-Def 6-Operator FM Matrix Synthesizer, Symbolic Mathematical DSP Engine, and Multiline Chord Progression Workstation in Pure Rust"
+license = "MIT"
+
+[lib]
+name = "harmonia"
+path = "src/lib.rs"
+
+[[bin]]
+name = "harmonia"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

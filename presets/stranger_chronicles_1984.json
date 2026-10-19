@@ -1,0 +1,63 @@
+{
+  "id": "stranger_chronicles_1984",
+  "title": "Stranger Chronicles 1984",
+  "subtitle": "Analog-FM Pulsing Bass + 16th Ostinato + ZDF Filter & Index Swell",
+  "description": "Driving 8th-note sub-bass and 16th-note synth-classical ostinato paired with warm voice-led FM brass pads and resonant zero-delay feedback filter sweeps.",
+  "bpm": 118.00,
+  "progression": "Am9 -> Fmaj7#11 -> Cmaj9/E -> Dm11 -> Am9 -> Fmaj9#11 -> Dm9 -> E7b9",
+  "beats_per_chord": 4.00,
+  "pattern": "stranger_pulse",
+  "tuning": "equal12",
+  "tuning_root_pc": 0,
+  "tuning_a4_hz": 440.00,
+  "patch": {
+    "id": "retro_classical_brass",
+    "name": "Retro-Classical FM Brass & Strings",
+    "category": "Classical-Modern FM",
+    "algorithm_name": "Alg 2: Dual Cascaded Stereo Stack (Op3->Op2->Op1 + Op5->Op4 + Op6 Sub)",
+    "vibrato_cents": 3.20,
+    "glide_secs": 0.0450,
+    "unison_voices": 2,
+    "unison_detune_cents": 6.50,
+    "math_expr": null,
+    "math_mix": 0.000,
+    "lfo1_shape": "smooth_drift",
+    "lfo1_rate_hz": 0.380,
+    "lfo1_depth": 1.000,
+    "filter_cutoff_hz": 3800.0,
+    "filter_resonance": 0.280,
+    "filter_lfo_depth_hz": 1850.0,
+    "chorus_mix": 0.320,
+    "delay_mix": 0.180,
+    "delay_time_secs": 0.375,
+    "delay_feedback": 0.360,
+    "reverb_mix": 0.340,
+    "reverb_room_size": 0.840,
+    "reverb_shimmer": 0.180,
+    "master_drive": 1.180,
+    "mod_matrix": [
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [2.150, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 1.050, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 1.350, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000]
+    ],
+    "lfo1_matrix_depth": [
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.850, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.750, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000]
+    ],
+    "operators": [
+      {"index": 0, "enabled": true, "ratio": 1.0000, "detune_cents": -4.50, "waveform": "sine", "output_level": 0.680, "pan": -0.35, "feedback": 0.180, "attack_secs": 0.0900, "decay_secs": 0.8500, "sustain_level": 0.780, "release_secs": 0.8500},
+      {"index": 1, "enabled": true, "ratio": 1.0000, "detune_cents": 2.00, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.420, "attack_secs": 0.1600, "decay_secs": 0.9000, "sustain_level": 0.580, "release_secs": 0.7500},
+      {"index": 2, "enabled": true, "ratio": 2.0000, "detune_cents": -1.50, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.100, "attack_secs": 0.2200, "decay_secs": 0.7000, "sustain_level": 0.380, "release_secs": 0.6000},
+      {"index": 3, "enabled": true, "ratio": 1.0000, "detune_cents": 5.20, "waveform": "glass_harmonic", "output_level": 0.580, "pan": 0.38, "feedback": 0.120, "attack_secs": 0.3500, "decay_secs": 1.2000, "sustain_level": 0.800, "release_secs": 1.4000},
+      {"index": 4, "enabled": true, "ratio": 3.0000, "detune_cents": 3.00, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.000, "attack_secs": 0.1800, "decay_secs": 0.9500, "sustain_level": 0.580, "release_secs": 0.7500},
+      {"index": 5, "enabled": true, "ratio": 0.5000, "detune_cents": 0.00, "waveform": "triangle", "output_level": 0.320, "pan": 0.00, "feedback": 0.250, "attack_secs": 0.3500, "decay_secs": 1.2000, "sustain_level": 0.800, "release_secs": 1.4000}
+    ]
+  }
+}

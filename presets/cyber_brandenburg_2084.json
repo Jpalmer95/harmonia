@@ -1,0 +1,63 @@
+{
+  "id": "cyber_brandenburg_2084",
+  "title": "Cybernetic Brandenburg 2084",
+  "subtitle": "4-Voice Contrary Counterpoint + Continuous Portamento Pitch Glide",
+  "description": "Four independent polyphonic FM/Chebyshev voices (Bass, Tenor, Alto, Soprano) moving at staggered rhythms with parsimonious voice-leading and continuous pitch glide.",
+  "bpm": 116.00,
+  "progression": "Dm9 -> Gm9 -> C9 -> Fmaj9 -> Bbmaj7#11 -> Em7b5 -> A7b9 -> Dmadd9",
+  "beats_per_chord": 4.00,
+  "pattern": "counterpoint_four_voice",
+  "tuning": "just_intonation",
+  "tuning_root_pc": 2,
+  "tuning_a4_hz": 440.00,
+  "patch": {
+    "id": "cyber_baroque_harpsichord",
+    "name": "Cybernetic Baroque Lute & Bowed FM",
+    "category": "Classical-Modern FM",
+    "algorithm_name": "Alg 1: Baroque Hybrid Stack",
+    "vibrato_cents": 2.50,
+    "glide_secs": 0.0350,
+    "unison_voices": 2,
+    "unison_detune_cents": 4.50,
+    "math_expr": null,
+    "math_mix": 0.000,
+    "lfo1_shape": "triangle",
+    "lfo1_rate_hz": 0.350,
+    "lfo1_depth": 1.000,
+    "filter_cutoff_hz": 5600.0,
+    "filter_resonance": 0.250,
+    "filter_lfo_depth_hz": 950.0,
+    "chorus_mix": 0.250,
+    "delay_mix": 0.220,
+    "delay_time_secs": 0.250,
+    "delay_feedback": 0.340,
+    "reverb_mix": 0.320,
+    "reverb_room_size": 0.820,
+    "reverb_shimmer": 0.140,
+    "master_drive": 1.150,
+    "mod_matrix": [
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [1.900, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 1.150, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 1.100, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000]
+    ],
+    "lfo1_matrix_depth": [
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.700, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.800, 0.000, 0.000],
+      [0.000, 0.000, 0.000, 0.000, 0.000, 0.000]
+    ],
+    "operators": [
+      {"index": 0, "enabled": true, "ratio": 1.0000, "detune_cents": -2.50, "waveform": "chebyshev_odd", "output_level": 0.650, "pan": -0.20, "feedback": 0.250, "attack_secs": 0.0120, "decay_secs": 0.7500, "sustain_level": 0.480, "release_secs": 0.5500},
+      {"index": 1, "enabled": true, "ratio": 2.0000, "detune_cents": 2.50, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.300, "attack_secs": 0.0050, "decay_secs": 0.4500, "sustain_level": 0.300, "release_secs": 0.4000},
+      {"index": 2, "enabled": true, "ratio": 3.0000, "detune_cents": 0.00, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.000, "attack_secs": 0.0040, "decay_secs": 0.6500, "sustain_level": 0.080, "release_secs": 0.4500},
+      {"index": 3, "enabled": true, "ratio": 1.0000, "detune_cents": 3.50, "waveform": "soft_saw", "output_level": 0.520, "pan": 0.25, "feedback": 0.150, "attack_secs": 0.0800, "decay_secs": 0.5500, "sustain_level": 0.760, "release_secs": 0.5000},
+      {"index": 4, "enabled": true, "ratio": 1.5000, "detune_cents": 0.00, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.000, "attack_secs": 0.1800, "decay_secs": 0.9500, "sustain_level": 0.580, "release_secs": 0.7500},
+      {"index": 5, "enabled": false, "ratio": 1.0000, "detune_cents": 0.00, "waveform": "sine", "output_level": 0.000, "pan": 0.00, "feedback": 0.000, "attack_secs": 0.0400, "decay_secs": 0.4500, "sustain_level": 0.720, "release_secs": 0.6500}
+    ]
+  }
+}

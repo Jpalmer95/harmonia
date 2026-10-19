@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Harmonia — Hi-Def FM &amp; Mathematical Music Studio</title>
+<style>
+  :root {
+    --bg: #0c0d11;
+    --panel: #14161d;
+    --panel-2: #1b1e28;
+    --ink: #e8e4d9;
+    --muted: #8a8578;
+    --gold: #c9a24a;
+    --gold-2: #e8c56a;
+    --cyan: #6ec8c4;
+    --rose: #c97a7a;
+    --line: #2a2e3a;
+    --ok: #7dba7a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+  body { min-height: 100vh; }
+  header {
+    padding: 28px 32px 12px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #161820 0%, var(--bg) 100%);
+  }
+  h1 { margin: 0; font-weight: 600; letter-spacing: 0.08em; font-size: 28px; color: var(--gold-2); }
+  h1 span { color: var(--cyan); font-weight: 400; letter-spacing: 0.18em; font-size: 13px; display: block; margin-top: 6px; text-transform: uppercase; }
+  .sub { color: var(--muted); margin-top: 8px; font-size: 14px; max-width: 820px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr 300px; gap: 18px; padding: 18px 22px 40px; }
+  @media (max-width: 1180px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  h2 { font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); margin: 0 0 12px; }
+  label { display: block; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 13px;
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  button {
+    cursor: pointer; border: 0; border-radius: 7px; padding: 10px 14px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px;
+  }
+  .primary { background: linear-gradient(180deg, var(--gold-2), var(--gold)); color: #1a1406; width: 100%; margin-top: 14px; }
+  .ghost { background: transparent; color: var(--cyan); border: 1px solid var(--cyan); width: 100%; margin-top: 8px; }
+  .preset {
+    display: block; width: 100%; text-align: left; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; text-transform: none; letter-spacing: 0;
+  }
+  .preset:hover { border-color: var(--gold); }
+  .preset b { display: block; color: var(--gold-2); font-size: 13px; }
+  .preset small { color: var(--muted); }
+  .status { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; min-height: 64px; }
+  .ok { color: var(--ok); }
+  .err { color: var(--rose); }
+  audio { width: 100%; margin-top: 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .trace { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 18px; letter-spacing: 1px; color: var(--cyan); overflow-x: auto; }
+  footer { color: var(--muted); font-size: 12px; padding: 0 22px 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Harmonia <span>Hi-Def 6-Op FM · Symbolic Math DSP · Multiline Chords</span></h1>
+  <p class="sub">Out of the box: retro-classical FM brass, glass cathedral pads, Cthulhu-style weaves, Just Intonation, and live mathematical equations. Everything is a JSON spec you can extend.</p>
+</header>
+<div class="layout">
+  <section class="card">
+    <h2>Flagship compositions</h2>
+    <div id="presets"></div>
+    <h2 style="margin-top:18px">Math formulas</h2>
+    <div id="formulas"></div>
+  </section>
+  <section class="card">
+    <h2>Playground</h2>
+    <label>Title / ID</label>
+    <div class="row">
+      <input id="id" value="studio_session" />
+      <input id="title" value="Studio Session" />
+    </div>
+    <label>Chord progression</label>
+    <textarea id="progression">Cm9 -&gt; Abmaj9#11 -&gt; Fm11 -&gt; G7b9 -&gt; Cm9 -&gt; Ebmaj9#11 -&gt; Dm7b5 -&gt; G7alt</textarea>
+    <div class="row">
+      <div>
+        <label>Pattern</label>
+        <select id="pattern">
+          <option value="cthulhu_cascade">Cthulhu Cascade</option>
+          <option value="bach_prelude">Bach Prelude</option>
+          <option value="sustained_cathedral">Sustained Cathedral</option>
+          <option value="stranger_pulse">Stranger Pulse</option>
+          <option value="polyrhythm_3v4">Polyrhythm 3v4</option>
+          <option value="counterpoint_four_voice">Four-Voice Counterpoint</option>
+        </select>
+      </div>
+      <div>
+        <label>Tuning</label>
+        <select id="tuning">
+          <option value="equal12">12-TET 440</option>
+          <option value="just_intonation">Just Intonation</option>
+          <option value="equal12_432">12-TET 432</option>
+          <option value="pythagorean">Pythagorean</option>
+          <option value="golden_ratio">Golden Ratio Φ</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>BPM</label><input id="bpm" type="number" value="108" /></div>
+      <div><label>Beats / chord</label><input id="beats" type="number" value="4" step="0.5" /></div>
+    </div>
+    <div class="row">
+      <div><label>Sample rate</label>
+        <select id="sr"><option>48000</option><option>96000</option><option>44100</option></select>
+      </div>
+      <div><label>Bit depth</label>
+        <select id="bits"><option value="24">24-bit PCM</option><option value="32f">32-bit float</option><option value="16">16-bit PCM</option></select>
+      </div>
+    </div>
+    <label>Symbolic math formula (optional)</label>
+    <textarea id="math">env * (0.65 * fm(f, f * 2.0, mod_idx * (0.6 + 0.4 * lfo1), t) + 0.35 * cheb(3, sin(w)))</textarea>
+    <div class="row">
+      <div><label>Math mix 0–1</label><input id="math_mix" type="number" step="0.05" value="0.0" /></div>
+      <div><label>LFO1 rate Hz</label><input id="lfo" type="number" step="0.01" value="0.24" /></div>
+    </div>
+    <div class="row">
+      <div><label>Filter cutoff Hz</label><input id="cutoff" type="number" value="4800" /></div>
+      <div><label>Shimmer 0–0.6</label><input id="shimmer" type="number" step="0.01" value="0.18" /></div>
+    </div>
+    <button class="primary" id="renderBtn">Render Hi-Def WAV</button>
+    <button class="ghost" id="jsonBtn">Show JSON spec</button>
+  </section>
+  <section class="card">
+    <h2>Telemetry</h2>
+    <div class="status" id="status">Ready. Pick a flagship or write a progression.</div>
+    <div class="trace" id="trace"></div>
+    <audio id="player" controls></audio>
+    <pre id="jsonOut" style="font-size:11px;color:var(--muted);overflow:auto;max-height:280px;"></pre>
+  </section>
+</div>
+<footer>Harmonia · Pure Rust, zero audio crates · JSON is the database · BYOC, no cloud synths.</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+let compositions = [];
+let formulas = [];
+
+async function loadPresets() {
+  const r = await fetch('/api/presets');
+  const data = await r.json();
+  compositions = data.compositions || [];
+  formulas = data.math_formulas || [];
+  $('presets').innerHTML = compositions.map((c, i) =>
+    `<button class="preset" data-i="${i}"><b>${c.title}</b><small>${c.id} · ${c.bpm} BPM · ${c.pattern}</small></button>`
+  ).join('');
+  $('formulas').innerHTML = formulas.map((f, i) =>
+    `<button class="preset" data-f="${i}"><b>${f.name}</b><small>${f.formula}</small></button>`
+  ).join('');
+  document.querySelectorAll('[data-i]').forEach(btn => btn.onclick = () => applyComp(compositions[+btn.dataset.i]));
+  document.querySelectorAll('[data-f]').forEach(btn => btn.onclick = () => {
+    const f = formulas[+btn.dataset.f];
+    $('math').value = f.formula;
+    $('math_mix').value = '0.78';
+  });
+  if (compositions[0]) applyComp(compositions[0]);
+}
+
+function applyComp(c) {
+  $('id').value = c.id;
+  $('title').value = c.title;
+  $('progression').value = c.progression;
+  $('pattern').value = c.pattern;
+  $('tuning').value = c.tuning;
+  $('bpm').value = c.bpm;
+  $('beats').value = c.beats_per_chord;
+  if (c.patch) {
+    $('math').value = c.patch.math_expr || $('math').value;
+    $('math_mix').value = c.patch.math_mix ?? 0;
+    $('lfo').value = c.patch.lfo1_rate_hz ?? 0.24;
+    $('cutoff').value = c.patch.filter_cutoff_hz ?? 4800;
+    $('shimmer').value = c.patch.reverb_shimmer ?? 0.18;
+  }
+}
+
+function spec() {
+  const tuning = $('tuning').value;
+  return {
+    id: $('id').value,
+    title: $('title').value,
+    progression: $('progression').value,
+    pattern: $('pattern').value,
+    tuning: tuning === 'equal12_432' ? 'equal12' : tuning,
+    tuning_a4_hz: tuning === 'equal12_432' ? 432 : 440,
+    bpm: +$('bpm').value,
+    beats_per_chord: +$('beats').value,
+    sample_rate: +$('sr').value,
+    bit_depth: $('bits').value,
+    math_expr: $('math').value,
+    math_mix: +$('math_mix').value,
+    lfo1_rate_hz: +$('lfo').value,
+    filter_cutoff_hz: +$('cutoff').value,
+    reverb_shimmer: +$('shimmer').value
+  };
+}
+
+$('jsonBtn').onclick = () => { $('jsonOut').textContent = JSON.stringify(spec(), null, 2); };
+
+$('renderBtn').onclick = async () => {
+  $('status').textContent = 'Rendering 64-bit float DSP…';
+  $('status').className = 'status';
+  try {
+    const r = await fetch('/api/render', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(spec()) });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'render failed');
+    $('status').className = 'status ok';
+    $('status').textContent = `OK  ${data.duration_secs.toFixed(2)}s  peak ${data.peak_dbfs.toFixed(2)} dBFS  RMS ${data.rms_dbfs.toFixed(2)} dBFS  ${data.render_ms.toFixed(0)} ms`;
+    $('trace').textContent = data.ascii_envelope || '';
+    $('player').src = data.wav_url;
+    $('player').play().catch(()=>{});
+  } catch (e) {
+    $('status').className = 'status err';
+    $('status').textContent = String(e);
+  }
+};
+
+loadPresets().catch(e => { $('status').className = 'status err'; $('status').textContent = e; });
+</script>
+</body>
+</html>
