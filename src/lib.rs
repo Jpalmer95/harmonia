@@ -9,12 +9,16 @@
 //! - [`CustomAudioEffect`] for custom DSP post-processors
 //! - [`math_engine::CompiledExpr`] for arbitrary mathematical equations at sample rate
 
+pub mod dx7;
 pub mod effects;
 pub mod fm_synth;
 pub mod json;
+pub mod karplus;
 pub mod math_engine;
+pub mod midi;
 pub mod oscillator;
 pub mod presets;
+pub mod scala;
 pub mod server;
 pub mod theory;
 pub mod wav;
@@ -117,5 +121,41 @@ mod tests {
         let wav_bytes = stereo.to_wav_bytes(BitDepth::Pcm24);
         assert_eq!(&wav_bytes[0..4], b"RIFF");
         assert_eq!(&wav_bytes[8..12], b"WAVE");
+    }
+
+    #[test]
+    fn test_midi_roundtrip_and_scala_edo31() {
+        use crate::midi::{encode_smf, hz_to_midi, parse_smf, MidiFile};
+        use crate::scala::{parse_scl, equal_temperament};
+
+        let scl = parse_scl("! test\n31 edo\n31\n38.70968\n77.41935\n116.12903\n154.83871\n193.54839\n232.25806\n270.96774\n309.67742\n348.38710\n387.09677\n425.80645\n464.51613\n503.22581\n541.93548\n580.64516\n619.35484\n658.06452\n696.77419\n735.48387\n774.19355\n812.90323\n851.61290\n890.32258\n929.03226\n967.74194\n1006.45161\n1045.16129\n1083.87097\n1122.58065\n1161.29032\n1200.0\n")
+            .expect("scl parse");
+        assert_eq!(scl.degrees(), 31);
+        let edo = equal_temperament(31, 2.0);
+        assert!((edo.period_ratio() - 2.0).abs() < 1e-9);
+
+        let chords = parse_progression("Am9 -> Fmaj7", 2.0);
+        let (events, _) = generate_multiline_events(
+            &chords,
+            100.0,
+            MultilinePattern::SustainedCathedral,
+            TuningSystem::Equal12 { a4_hz: 440.0 },
+        );
+        let midi = MidiFile::from_note_events(&events, 100.0, |ev| hz_to_midi(ev.target_freq_hz));
+        let bytes = encode_smf(&midi);
+        let back = parse_smf(&bytes).expect("midi parse");
+        assert!(!back.notes.is_empty());
+        assert!((back.bpm() - 100.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_dx7_algorithms_and_karplus() {
+        let a5 = crate::dx7::algorithm(5);
+        assert_eq!(a5.number, 5);
+        assert!(a5.matrix[1][0] > 0.0);
+        let a32 = crate::dx7::algorithm(32);
+        assert_eq!(a32.carriers.len(), 6);
+        let y = crate::karplus::ks_waveform(220.0, 0.02, 0.4);
+        assert!(y.is_finite());
     }
 }

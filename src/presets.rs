@@ -27,7 +27,7 @@ impl CompositionSpec {
     pub fn render(&self, sample_rate: u32) -> Result<StereoBuffer, String> {
         let chords = parse_progression(&self.progression, self.beats_per_chord);
         let (events, seq_dur_sec) =
-            generate_multiline_events(&chords, self.bpm, self.pattern, self.tuning);
+            generate_multiline_events(&chords, self.bpm, self.pattern, self.tuning.clone());
 
         let compiled_math = if let Some(ref expr_str) = self.patch.math_expr {
             if !expr_str.trim().is_empty() && self.patch.math_mix > 0.001 {

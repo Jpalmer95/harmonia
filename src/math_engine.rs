@@ -145,6 +145,7 @@ pub enum FuncId {
     Smoothstep,
     Harm,
     Pluck,
+    Ks,
     // 4-arg
     Fm,
     Bell,
@@ -433,6 +434,13 @@ fn eval_func(func: FuncId, stack: &mut [f64; 64], sp: &mut usize) {
                 sum += (env / kf.powf(0.85)) * (TAU * fk * t).sin();
             }
             stack[*sp - 3] = sum * 0.55;
+            *sp -= 2;
+        }
+        FuncId::Ks if *sp >= 3 => {
+            let damp = stack[*sp - 1];
+            let t = stack[*sp - 2];
+            let f = stack[*sp - 3];
+            stack[*sp - 3] = crate::karplus::ks_waveform(f, t, damp);
             *sp -= 2;
         }
         FuncId::Fm if *sp >= 4 => {
@@ -767,6 +775,7 @@ fn resolve_function(name: &str) -> Result<(FuncId, usize), String> {
         "smoothstep" => (FuncId::Smoothstep, 3),
         "harm" | "harmonics" => (FuncId::Harm, 3),
         "pluck" | "string" => (FuncId::Pluck, 3),
+        "ks" | "karplus" => (FuncId::Ks, 3),
         "fm" => (FuncId::Fm, 4),
         "bell" => (FuncId::Bell, 4),
         "chord" => (FuncId::Chord, 5),
@@ -828,6 +837,13 @@ pub fn builtin_math_formulas() -> Vec<MathFormulaPreset> {
             category: "Physical & Spectral",
             formula: "bell(f, t, mod_idx * 1.4, 0.9) + 0.3 * pluck(f * 2.0, t, 1.5)",
             description: "Classic CCRMA inharmonic FM bell combined with a modal plucked string overtone layer.",
+        },
+        MathFormulaPreset {
+            id: "karplus_lute",
+            name: "Karplus–Strong Lute / Harp",
+            category: "Physical Models",
+            formula: "env * (0.72 * ks(f, t, 0.55) + 0.28 * sin(w * 0.5))",
+            description: "Plucked-string physical model with a warm sub-octave sine for lute, harp, and guitar transients.",
         },
     ]
 }

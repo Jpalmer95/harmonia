@@ -2,14 +2,16 @@
 //! and Cthulhu/Scaler-Style Multiline Chord Progression Sequencer.
 
 use crate::math_engine::PHI;
+use crate::scala::ScalaScale;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum TuningSystem {
     Equal12 { a4_hz: f64 },
     JustIntonation { root_pc: u8, a4_hz: f64 },
     Pythagorean { root_pc: u8, a4_hz: f64 },
     HarmonicSeries { base_hz: f64 },
     GoldenRatio { a4_hz: f64 },
+    Scala { scale: ScalaScale, tonic_midi: f64, a4_hz: f64 },
 }
 
 impl Default for TuningSystem {
@@ -32,29 +34,50 @@ impl TuningSystem {
             },
             "harm" | "harmonic" | "overtone" => TuningSystem::HarmonicSeries { base_hz: 55.0 },
             "phi" | "golden" | "golden_ratio" => TuningSystem::GoldenRatio { a4_hz: 440.0 },
-            _ => TuningSystem::Equal12 { a4_hz: 440.0 },
+            other => {
+                if let Some(scale) = crate::scala::find_builtin_scala(other) {
+                    TuningSystem::Scala {
+                        scale,
+                        tonic_midi: 69.0,
+                        a4_hz: 440.0,
+                    }
+                } else if other.starts_with("edo") {
+                    if let Ok(n) = other.trim_start_matches("edo").parse::<usize>() {
+                        TuningSystem::Scala {
+                            scale: crate::scala::equal_temperament(n, 2.0),
+                            tonic_midi: 69.0,
+                            a4_hz: 440.0,
+                        }
+                    } else {
+                        TuningSystem::Equal12 { a4_hz: 440.0 }
+                    }
+                } else {
+                    TuningSystem::Equal12 { a4_hz: 440.0 }
+                }
+            }
         }
     }
 
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
             TuningSystem::Equal12 { a4_hz } if (*a4_hz - 432.0).abs() < 1.0 => {
-                "12-TET (A4 = 432 Hz)"
+                "12-TET (A4 = 432 Hz)".into()
             }
-            TuningSystem::Equal12 { .. } => "12-Tone Equal Temperament (A4 = 440 Hz)",
-            TuningSystem::JustIntonation { .. } => "Pure 5/7-Limit Just Intonation",
-            TuningSystem::Pythagorean { .. } => "Pythagorean Pure Fifths (3:2)",
-            TuningSystem::HarmonicSeries { .. } => "Pure Spectral Overtone Series",
-            TuningSystem::GoldenRatio { .. } => "Golden Ratio (Phi = 1.618) Microtonal",
+            TuningSystem::Equal12 { .. } => "12-Tone Equal Temperament (A4 = 440 Hz)".into(),
+            TuningSystem::JustIntonation { .. } => "Pure 5/7-Limit Just Intonation".into(),
+            TuningSystem::Pythagorean { .. } => "Pythagorean Pure Fifths (3:2)".into(),
+            TuningSystem::HarmonicSeries { .. } => "Pure Spectral Overtone Series".into(),
+            TuningSystem::GoldenRatio { .. } => "Golden Ratio (Phi = 1.618) Microtonal".into(),
+            TuningSystem::Scala { scale, .. } => format!("Scala: {}", scale.description),
         }
     }
 
     /// Convert a MIDI note number (with optional chord root pitch class for pure adaptive Just Intonation) to Hz.
     pub fn midi_to_hz(&self, midi_note: f64, chord_root_pc: Option<u8>) -> f64 {
-        match *self {
-            TuningSystem::Equal12 { a4_hz } => a4_hz * (2.0_f64).powf((midi_note - 69.0) / 12.0),
+        match self {
+            TuningSystem::Equal12 { a4_hz } => *a4_hz * (2.0_f64).powf((midi_note - 69.0) / 12.0),
             TuningSystem::JustIntonation { root_pc, a4_hz } => {
-                let ref_pc = chord_root_pc.unwrap_or(root_pc) % 12;
+                let ref_pc = chord_root_pc.unwrap_or(*root_pc) % 12;
                 let rounded = midi_note.round() as i32;
                 let pc = rounded.rem_euclid(12) as u8;
                 let interval = (pc + 12 - ref_pc) % 12;
@@ -74,13 +97,13 @@ impl TuningSystem {
                     15.0 / 8.0,   // Major 7th 15:8
                 ];
                 let root_midi_same_oct = rounded - (interval as i32);
-                let root_hz = a4_hz * (2.0_f64).powf((root_midi_same_oct as f64 - 69.0) / 12.0);
+                let root_hz = *a4_hz * (2.0_f64).powf((root_midi_same_oct as f64 - 69.0) / 12.0);
                 root_hz * ratios[interval as usize]
             }
             TuningSystem::Pythagorean { root_pc, a4_hz } => {
                 let rounded = midi_note.round() as i32;
                 let pc = rounded.rem_euclid(12) as u8;
-                let interval = (pc + 12 - (root_pc % 12)) % 12;
+                let interval = (pc + 12 - (*root_pc % 12)) % 12;
                 let pyth_ratios: [f64; 12] = [
                     1.0,
                     256.0 / 243.0,
@@ -96,7 +119,7 @@ impl TuningSystem {
                     243.0 / 128.0,
                 ];
                 let root_midi_same_oct = rounded - (interval as i32);
-                let root_hz = a4_hz * (2.0_f64).powf((root_midi_same_oct as f64 - 69.0) / 12.0);
+                let root_hz = *a4_hz * (2.0_f64).powf((root_midi_same_oct as f64 - 69.0) / 12.0);
                 root_hz * pyth_ratios[interval as usize]
             }
             TuningSystem::HarmonicSeries { base_hz } => {
@@ -106,15 +129,23 @@ impl TuningSystem {
                 let degree = (step % 12.0).round() as usize;
                 let partial_map: [f64; 12] =
                     [1.0, 17.0 / 16.0, 9.0 / 8.0, 19.0 / 16.0, 5.0 / 4.0, 21.0 / 16.0, 11.0 / 8.0, 3.0 / 2.0, 13.0 / 8.0, 27.0 / 16.0, 7.0 / 4.0, 15.0 / 8.0];
-                base_hz * (2.0_f64).powf(octave) * partial_map[degree.min(11)]
+                *base_hz * (2.0_f64).powf(octave) * partial_map[degree.min(11)]
             }
             TuningSystem::GoldenRatio { a4_hz } => {
-                // 12 steps per octave where micro-intervals blend golden-ratio powers with 2:1 octave anchor
                 let oct = (midi_note - 69.0) / 12.0;
                 let semi = (midi_note - 69.0).rem_euclid(12.0);
                 let phi_blend = 0.85 * (2.0_f64).powf(oct)
                     + 0.15 * PHI.powf(oct * 1.4404) * (1.0 + 0.008 * semi);
-                a4_hz * phi_blend
+                *a4_hz * phi_blend
+            }
+            TuningSystem::Scala {
+                scale,
+                tonic_midi,
+                a4_hz,
+            } => {
+                let tonic_hz = *a4_hz * (2.0_f64).powf((*tonic_midi - 69.0) / 12.0);
+                let degree = (midi_note - tonic_midi).round() as i32;
+                tonic_hz * scale.degree_ratio(degree)
             }
         }
     }

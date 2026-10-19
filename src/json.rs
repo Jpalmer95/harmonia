@@ -95,12 +95,21 @@ impl CompositionSpec {
         s.push_str(&format!("  \"beats_per_chord\": {:.2},\n", self.beats_per_chord));
         s.push_str(&format!("  \"pattern\": \"{}\",\n", self.pattern.as_str()));
 
-        let (tuning_name, root_pc, a4_hz) = match self.tuning {
-            TuningSystem::Equal12 { a4_hz } => ("equal12", 0, a4_hz),
-            TuningSystem::JustIntonation { root_pc, a4_hz } => ("just_intonation", root_pc, a4_hz),
-            TuningSystem::Pythagorean { root_pc, a4_hz } => ("pythagorean", root_pc, a4_hz),
-            TuningSystem::HarmonicSeries { base_hz } => ("harmonic_series", 0, base_hz),
-            TuningSystem::GoldenRatio { a4_hz } => ("golden_ratio", 0, a4_hz),
+        let (tuning_name, root_pc, a4_hz) = match &self.tuning {
+            TuningSystem::Equal12 { a4_hz } => ("equal12".to_string(), 0, *a4_hz),
+            TuningSystem::JustIntonation { root_pc, a4_hz } => {
+                ("just_intonation".to_string(), *root_pc, *a4_hz)
+            }
+            TuningSystem::Pythagorean { root_pc, a4_hz } => {
+                ("pythagorean".to_string(), *root_pc, *a4_hz)
+            }
+            TuningSystem::HarmonicSeries { base_hz } => {
+                ("harmonic_series".to_string(), 0, *base_hz)
+            }
+            TuningSystem::GoldenRatio { a4_hz } => ("golden_ratio".to_string(), 0, *a4_hz),
+            TuningSystem::Scala { scale, a4_hz, .. } => {
+                (format!("scala:{}", scale.description), 0, *a4_hz)
+            }
         };
         s.push_str(&format!("  \"tuning\": \"{tuning_name}\",\n"));
         s.push_str(&format!("  \"tuning_root_pc\": {root_pc},\n"));
@@ -177,8 +186,12 @@ impl CompositionSpec {
                     base_hz: a4_hz.min(110.0),
                 },
                 "phi" | "golden" | "golden_ratio" => TuningSystem::GoldenRatio { a4_hz },
-                _ => TuningSystem::Equal12 { a4_hz },
+                other => TuningSystem::from_str(other, root_pc),
             };
+        }
+
+        if let Some(algo) = val.get("dx7_algorithm").and_then(|v| v.as_f64()) {
+            crate::dx7::apply_to_patch(&mut spec.patch, algo as u8, 1.8);
         }
 
         if let Some(patch_obj) = val.get("patch") {

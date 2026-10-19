@@ -36,6 +36,8 @@ fn main() {
         "play" => cmd_play(rest),
         "export-presets" | "export" => cmd_export_presets(rest),
         "serve" | "studio" => cmd_serve(rest),
+        "midi" => cmd_midi(rest),
+        "dx7" => cmd_dx7(rest),
         other => Err(format!(
             "Unknown subcommand '{other}'. Run `harmonia --help` for usage."
         )),
@@ -103,6 +105,9 @@ SUBCOMMANDS:
   play <path.wav|id>        Play a WAV file or render & play a composition ID via system audio
   export-presets [dir]      Export all built-in compositions as editable .json files
   serve [--port 8765]       Launch the interactive Harmonia Web Studio UI & HTTP API
+  midi export <id> -o f.mid Write a Standard MIDI File of a composition's voice-led events
+  midi render <file.mid>    Render an SMF through the FM engine
+  dx7 <1-32>                Preview a Yamaha DX7 algorithm on the glass cathedral patch
 "#
     );
 }
@@ -147,6 +152,15 @@ fn cmd_list() -> Result<(), String> {
     println!("  • pythagorean │ Pure Stacked 3:2 Fifths Tuning");
     println!("  • harmonic    │ Pure Spectral Overtone Series (Harmonics 1..32)");
     println!("  • phi         │ Golden Ratio (Phi = 1.618034) Microtonal Intervals");
+    println!("  • edo19/31/53 │ Equal divisions of the octave (Scala)");
+    println!("  • quarter_comma_meantone │ Historical 1/4-comma meantone");
+    println!("  • werckmeister_iii / young_1799 │ Well temperaments");
+    println!("  • bp_lambda   │ Bohlen–Pierce 13-ED3");
+
+    println!("\n═══ 6. OPEN FORMATS ═══");
+    println!("  • MIDI SMF    │ harmonia midi export <id>  /  harmonia midi render file.mid");
+    println!("  • Scala .scl  │ --tuning edo31  or load a .scl via JSON \"tuning\": \"edo31\"");
+    println!("  • DX7 algos   │ harmonia dx7 5   (Yamaha algorithms 1–32 as 6×6 matrices)");
 
     Ok(())
 }
@@ -672,4 +686,150 @@ fn play_wav_file(path: &Path) -> Result<(), String> {
     }
 
     Err("No system audio player (pw-play, paplay, aplay, ffplay) could be started".to_string())
+}
+
+fn cmd_midi(args: &[String]) -> Result<(), String> {
+    if args.is_empty() {
+        return Err("Usage: harmonia midi export <composition_id> -o out.mid  |  harmonia midi render <file.mid> [-o out.wav]".into());
+    }
+    match args[0].as_str() {
+        "export" => {
+            if args.len() < 2 {
+                return Err("Usage: harmonia midi export <composition_id> -o out.mid".into());
+            }
+            let id = &args[1];
+            let spec = find_composition(id).ok_or_else(|| format!("Unknown composition '{id}'"))?;
+            let mut out = PathBuf::from(format!("renders/{}.mid", spec.id));
+            let mut i = 2;
+            while i < args.len() {
+                if (args[i] == "-o" || args[i] == "--out") && i + 1 < args.len() {
+                    out = PathBuf::from(&args[i + 1]);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            let chords = harmonia::theory::parse_progression(&spec.progression, spec.beats_per_chord);
+            let (events, _) =
+                harmonia::theory::generate_multiline_events(&chords, spec.bpm, spec.pattern.clone(), spec.tuning.clone());
+            let midi = harmonia::midi::MidiFile::from_note_events(&events, spec.bpm, |ev| {
+                harmonia::midi::hz_to_midi(ev.target_freq_hz)
+            });
+            if let Some(parent) = out.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = fs::create_dir_all(parent);
+                }
+            }
+            harmonia::midi::save_smf(&out, &midi)?;
+            println!("Wrote MIDI ({} notes, {:.1} BPM) → {}", midi.notes.len(), midi.bpm(), out.display());
+            Ok(())
+        }
+        "render" => {
+            if args.len() < 2 {
+                return Err("Usage: harmonia midi render <file.mid> [-o out.wav] [--play]".into());
+            }
+            let path = Path::new(&args[1]);
+            let midi = harmonia::midi::load_smf(path)?;
+            let mut out = PathBuf::from("renders/midi_render.wav");
+            let mut do_play = false;
+            let mut i = 2;
+            while i < args.len() {
+                if (args[i] == "-o" || args[i] == "--out") && i + 1 < args.len() {
+                    out = PathBuf::from(&args[i + 1]);
+                    i += 2;
+                } else if args[i] == "--play" {
+                    do_play = true;
+                    i += 1;
+                } else {
+                    i += 1;
+                }
+            }
+            let events = midi.to_note_events(|n| {
+                440.0 * (2.0_f64).powf((n as f64 - 69.0) / 12.0)
+            });
+            let mut spec = find_composition("glass_cathedral_ji")
+                .or_else(|| builtin_compositions().into_iter().next())
+                .unwrap();
+            spec.id = "midi_render".into();
+            spec.title = format!("MIDI render: {}", path.display());
+            let sr = 48000u32;
+            let tail = 1.8;
+            let last = events
+                .iter()
+                .map(|e| e.start_sec + e.duration_sec)
+                .fold(1.0_f64, f64::max);
+            let frames = ((last + tail) * sr as f64).ceil() as usize;
+            let mut buf = StereoBuffer::new(sr, frames);
+            for ev in &events {
+                let start = (ev.start_sec * sr as f64).round() as usize;
+                spec.patch.render_note_into(
+                    &mut buf.left,
+                    &mut buf.right,
+                    sr,
+                    start,
+                    ev.duration_sec,
+                    ev.start_freq_hz,
+                    ev.target_freq_hz,
+                    ev.velocity,
+                    ev.voice_line,
+                    None,
+                );
+            }
+            process_master_chain(&mut buf, &spec.patch);
+            if let Some(parent) = out.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = fs::create_dir_all(parent);
+                }
+            }
+            buf.save_wav(&out, BitDepth::Pcm24)
+                .map_err(|e| format!("WAV write failed: {e}"))?;
+            print_render_summary(&spec.title, &out, &buf, BitDepth::Pcm24, 0.0);
+            if do_play {
+                play_wav_file(&out)?;
+            }
+            Ok(())
+        }
+        other => Err(format!("Unknown midi subcommand '{other}' (use export|render)")),
+    }
+}
+
+fn cmd_dx7(args: &[String]) -> Result<(), String> {
+    let n = args
+        .first()
+        .and_then(|s| s.parse::<u8>().ok())
+        .unwrap_or(5)
+        .clamp(1, 32);
+    let algo = harmonia::dx7::algorithm(n);
+    println!("DX7 Algorithm {} — {}", algo.number, algo.name);
+    println!("Carriers: {:?}", algo.carriers);
+    println!("Feedback operator: {}", algo.feedback_op + 1);
+    print!("Matrix src↓ dst→  ");
+    for c in 0..6 {
+        print!("  {}", c + 1);
+    }
+    println!();
+    for r in 0..6 {
+        print!("             {:2}  ", r + 1);
+        for c in 0..6 {
+            print!(" {}", if algo.matrix[r][c] > 0.0 { "●" } else { "·" });
+        }
+        println!();
+    }
+
+    let mut spec = find_composition("glass_cathedral_ji")
+        .or_else(|| builtin_compositions().into_iter().next())
+        .unwrap();
+    harmonia::dx7::apply_to_patch(&mut spec.patch, n, 1.9);
+    spec.id = format!("dx7_alg_{n}");
+    spec.title = format!("DX7 Algorithm {n} — {}", algo.name);
+    spec.beats_per_chord = 2.0;
+    spec.progression = "Cm9 -> Abmaj9#11 -> Fm11 -> G7b9".into();
+    let out = PathBuf::from(format!("renders/dx7_alg_{n}.wav"));
+    let t0 = Instant::now();
+    let stereo = spec.render(48000)?;
+    stereo
+        .save_wav(&out, BitDepth::Pcm24)
+        .map_err(|e| format!("WAV write failed: {e}"))?;
+    print_render_summary(&spec.title, &out, &stereo, BitDepth::Pcm24, t0.elapsed().as_secs_f64());
+    Ok(())
 }
