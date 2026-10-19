@@ -22,6 +22,7 @@ Hi-def sounds and music: 6-op FM, live math equations, multiline chord weaves.
 - [x] WAV pitch/chord *sketch* (`analyze`) — not FM reverse-engineering
 - [x] Four more flagships (lute/31-EDO, neon organum, lambda choir, Buchla dusk)
 - [x] Studio chord builder: quality chips, long-press/right-click palette, progression chips, slash bass, length
+- [x] Visible library-save feedback (toast + tab switch); formula lint; patch picker; MIDI export; spec undo; limiter/normalize/dither; analyze chip confidence
 
 ## Decisions
 

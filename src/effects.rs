@@ -62,7 +62,39 @@ pub fn process_master_chain(buf: &mut StereoBuffer, patch: &FmPatch) {
     }
 
     buf.apply_fades(0.015, 0.35);
-    buf.normalize(0.92);
+    apply_limiter(buf, patch.limiter_ceiling.clamp(0.5, 1.0));
+    let peak = if patch.normalize_peak > 0.05 {
+        patch.normalize_peak.clamp(0.1, 0.999)
+    } else {
+        0.92
+    };
+    buf.normalize(peak);
+}
+
+/// Soft-knee peak limiter. Ceiling is linear (0.98 ≈ −0.18 dBFS).
+pub fn apply_limiter(buf: &mut StereoBuffer, ceiling: f64) {
+    let n = buf.len();
+    if n == 0 {
+        return;
+    }
+    let ceil = ceiling.clamp(0.2, 1.0);
+    let mut env = 0.0_f64;
+    let atk = 0.003;
+    let rel = 0.08;
+    let sr = buf.sample_rate.max(1) as f64;
+    let atk_c = (-1.0 / (atk * sr)).exp();
+    let rel_c = (-1.0 / (rel * sr)).exp();
+    for i in 0..n {
+        let peak = buf.left[i].abs().max(buf.right[i].abs());
+        if peak > env {
+            env = atk_c * env + (1.0 - atk_c) * peak;
+        } else {
+            env = rel_c * env + (1.0 - rel_c) * peak;
+        }
+        let g = if env > ceil { ceil / env } else { 1.0 };
+        buf.left[i] *= g;
+        buf.right[i] *= g;
+    }
 }
 
 pub fn apply_dc_blocker(buf: &mut StereoBuffer) {

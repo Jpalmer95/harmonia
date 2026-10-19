@@ -84,6 +84,12 @@ pub struct FmPatch {
     pub reverb_room_size: f64,
     pub reverb_shimmer: f64,
     pub master_drive: f64,
+    /// Peak linear target after the master chain (0.92 ≈ −0.72 dBFS).
+    pub normalize_peak: f64,
+    /// TPDF dither amplitude when encoding 16-bit PCM (0 disables).
+    pub dither_amp: f64,
+    /// Soft-knee limiter ceiling in linear amplitude (1.0 = 0 dBFS).
+    pub limiter_ceiling: f64,
 }
 
 impl Default for FmPatch {
@@ -275,6 +281,9 @@ impl FmPatch {
             reverb_room_size: 0.84,
             reverb_shimmer: 0.18,
             master_drive: 1.18,
+            normalize_peak: 0.92,
+            dither_amp: 1.0,
+            limiter_ceiling: 0.98,
         }
     }
 
@@ -438,6 +447,9 @@ impl FmPatch {
             reverb_room_size: 0.90,
             reverb_shimmer: 0.28,
             master_drive: 1.12,
+            normalize_peak: 0.92,
+            dither_amp: 1.0,
+            limiter_ceiling: 0.98,
         }
     }
 
@@ -580,6 +592,9 @@ impl FmPatch {
             reverb_room_size: 0.82,
             reverb_shimmer: 0.14,
             master_drive: 1.15,
+            normalize_peak: 0.92,
+            dither_amp: 1.0,
+            limiter_ceiling: 0.98,
         }
     }
 

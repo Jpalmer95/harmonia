@@ -50,6 +50,8 @@ pub struct StereoBuffer {
     pub sample_rate: u32,
     pub left: Vec<f64>,
     pub right: Vec<f64>,
+    /// TPDF dither scale for 16-bit encode (0 = off). 1.0 = ±1 LSB.
+    pub dither_amp: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +68,8 @@ pub struct AudioReport {
     pub stereo_width_corr: f64,
     pub dc_offset: f64,
     pub ascii_envelope: String,
+    pub mono_compatible: bool,
+    pub stereo_width_label: String,
 }
 
 impl StereoBuffer {
@@ -74,6 +78,7 @@ impl StereoBuffer {
             sample_rate,
             left: vec![0.0; num_frames],
             right: vec![0.0; num_frames],
+            dither_amp: 0.0,
         }
     }
 
@@ -162,17 +167,27 @@ impl StereoBuffer {
         buf.extend_from_slice(b"data");
         buf.extend_from_slice(&data_size.to_le_bytes());
 
+        let dither = if bit_depth == BitDepth::Pcm16 {
+            self.dither_amp
+        } else {
+            0.0
+        };
+        let mut tpdf = 0xA5A5_u32.wrapping_mul(self.sample_rate | 1);
         for i in 0..num_frames {
-            let l = if self.left[i].is_finite() {
+            let mut l = if self.left[i].is_finite() {
                 self.left[i].clamp(-1.0, 1.0)
             } else {
                 0.0
             };
-            let r = if self.right[i].is_finite() {
+            let mut r = if self.right[i].is_finite() {
                 self.right[i].clamp(-1.0, 1.0)
             } else {
                 0.0
             };
+            if dither > 0.0 {
+                l = (l + tpdf_noise(&mut tpdf) * dither / 32768.0).clamp(-1.0, 1.0);
+                r = (r + tpdf_noise(&mut tpdf) * dither / 32768.0).clamp(-1.0, 1.0);
+            }
             write_sample(&mut buf, l, bit_depth);
             write_sample(&mut buf, r, bit_depth);
         }
@@ -206,6 +221,8 @@ impl StereoBuffer {
                 stereo_width_corr: 1.0,
                 dc_offset: 0.0,
                 ascii_envelope: String::new(),
+                mono_compatible: true,
+                stereo_width_label: "empty".into(),
             };
         }
 
@@ -294,8 +311,26 @@ impl StereoBuffer {
             stereo_width_corr: corr,
             dc_offset: sum_dc / n as f64,
             ascii_envelope: ascii,
+            mono_compatible: corr > 0.35,
+            stereo_width_label: if corr > 0.92 {
+                "almost mono".into()
+            } else if corr > 0.55 {
+                "compatible".into()
+            } else if corr > 0.2 {
+                "wide".into()
+            } else {
+                "out of phase / check mono".into()
+            },
         }
     }
+}
+
+fn tpdf_noise(state: &mut u32) -> f64 {
+    *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+    let a = (*state >> 16) as f64 / 65536.0;
+    *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+    let b = (*state >> 16) as f64 / 65536.0;
+    a + b - 1.0
 }
 
 fn write_sample(buf: &mut Vec<u8>, sample: f64, bit_depth: BitDepth) {

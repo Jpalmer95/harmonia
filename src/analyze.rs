@@ -76,8 +76,13 @@ impl AnalyzeReport {
                 s.push_str(",\n");
             }
             s.push_str(&format!(
-                "    {{\"t\": {:.3}, \"dur\": {:.3}, \"symbol\": \"{}\", \"root_pc\": {}, \"quality\": \"{}\"}}",
-                c.t_sec, c.duration_sec, crate::json::escape_json(&c.symbol), c.root_pc, c.quality
+                "    {{\"t\": {:.3}, \"dur\": {:.3}, \"symbol\": \"{}\", \"root_pc\": {}, \"quality\": \"{}\", \"confidence\": {:.2}}}",
+                c.t_sec,
+                c.duration_sec,
+                crate::json::escape_json(&c.symbol),
+                c.root_pc,
+                c.quality,
+                chord_confidence(&c.chroma)
             ));
         }
         s.push_str("\n  ],\n  \"caveats\": [\n");
@@ -355,6 +360,16 @@ fn match_chord(ch: &[f64; 12]) -> (String, u8, &'static str) {
         best_root,
         if best_q.is_empty() { "maj" } else { best_q },
     )
+}
+
+fn chord_confidence(ch: &[f64; 12]) -> f64 {
+    let sum: f64 = ch.iter().sum();
+    if sum < 1e-9 {
+        return 0.0;
+    }
+    let mut ranked = *ch;
+    ranked.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    ((ranked[0] + ranked[1] + ranked[2]) / sum).clamp(0.0, 1.0)
 }
 
 fn argmax12(v: &[f64; 12]) -> usize {

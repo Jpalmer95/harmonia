@@ -65,7 +65,11 @@
     border-radius: 10px; padding: 8px; width: 280px; box-shadow: 0 12px 40px #000a;
   }
   .palette b { display: block; color: var(--gold-2); font-size: 12px; margin-bottom: 6px; }
-  .palette .qchip { margin: 2px; }
+  .toast { margin-top: 10px; min-height: 22px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .toast.ok { color: var(--ok); } .toast.err { color: var(--rose); }
+  .lint { font-family: ui-monospace, Menlo, monospace; font-size: 12px; margin-top: 4px; color: var(--muted); min-height: 18px; }
+  .lint.ok { color: var(--ok); } .lint.err { color: var(--rose); }
+  .ghost.on { background: #163532; color: var(--gold-2); border-color: var(--gold); }
 </style>
 </head>
 <body>
@@ -153,28 +157,48 @@
       <div><label>Sample rate</label><select id="sr"><option>48000</option><option>96000</option><option>44100</option></select></div>
       <div><label>Bit depth</label><select id="bits"><option value="24">24-bit PCM</option><option value="32f">32-bit float</option><option value="16">16-bit</option></select></div>
     </div>
-    <label>Math formula (optional)</label>
-    <textarea id="math">env * fm(f, f * phi, mod_idx * (0.5 + 0.5 * lfo1), t)</textarea>
     <div class="row">
-      <div><label>Math mix</label><input id="math_mix" type="number" step="0.05" value="0" /></div>
+      <div><label>Patch</label>
+        <select id="patch">
+          <option value="">(keep flagship patch)</option>
+        </select>
+      </div>
       <div><label>DX7 algorithm 0–32</label><input id="dx7" type="number" min="0" max="32" value="0" /></div>
     </div>
+    <label>Math formula (optional)</label>
+    <textarea id="math">env * fm(f, f * phi, mod_idx * (0.5 + 0.5 * lfo1), t)</textarea>
+    <div class="lint" id="mathLint">Formula idle</div>
     <div class="row">
+      <div><label>Math mix</label><input id="math_mix" type="number" step="0.05" value="0" /></div>
       <div><label>LFO1 Hz</label><input id="lfo" type="number" step="0.01" value="0.24" /></div>
+    </div>
+    <div class="row">
       <div><label>Shimmer</label><input id="shimmer" type="number" step="0.01" value="0.18" /></div>
+      <div><label>Limiter ceiling</label><input id="ceiling" type="number" step="0.01" min="0.5" max="1" value="0.98" /></div>
+    </div>
+    <div class="row">
+      <div><label>Normalize peak</label><input id="normPeak" type="number" step="0.01" min="0.1" max="0.99" value="0.92" /></div>
+      <div><label>16-bit dither</label><input id="dither" type="number" step="0.1" min="0" max="4" value="1" /></div>
     </div>
     <button class="primary" id="renderBtn">Render Hi-Def WAV</button>
+    <button class="ghost" id="midiBtn">Export MIDI</button>
+    <p class="hint">Render plays audio. The buttons below <b>save a Harmonia Block</b> to the Library tab (JSON always; WAV/MP3 optional). They are not extra render formats.</p>
     <div class="row">
-      <button class="ghost tiny" id="saveWav">+ WAV</button>
-      <button class="ghost tiny" id="saveMp3">+ MP3</button>
-      <button class="ghost tiny" id="saveJson">+ JSON only</button>
+      <button class="ghost tiny" id="saveWav">Save WAV to library</button>
+      <button class="ghost tiny" id="saveMp3">Save MP3 to library</button>
     </div>
-    <label>Unsaved render policy</label>
+    <button class="ghost" id="saveJson">Save JSON block only</button>
+    <div class="toast" id="toast">Render first, then save a block if you want to keep it.</div>
+    <label>Keep policy for saved blocks</label>
     <select id="keepPolicy">
-      <option value="next_generation">Drop on next generate (lightest)</option>
+      <option value="library">Keep until I delete it</option>
       <option value="ttl:86400">Expire in 24h</option>
-      <option value="library">Keep in library</option>
+      <option value="next_generation">Drop on next generate</option>
     </select>
+    <div class="row">
+      <button class="ghost tiny" id="undoSpec">Undo spec</button>
+      <button class="ghost tiny" id="redoSpec">Redo spec</button>
+    </div>
     <button class="ghost" id="jsonBtn">Show JSON spec</button>
     </div>
 
@@ -375,6 +399,12 @@ async function loadPresets() {
   const data = await r.json();
   compositions = data.compositions || [];
   formulas = data.math_formulas || [];
+  const patches = data.patches || [];
+  const keep = $('patch').value;
+  $('patch').innerHTML = '<option value="">(keep flagship patch)</option>' + patches.map(p =>
+    `<option value="${p.id}">${p.name}</option>`
+  ).join('');
+  if (keep) $('patch').value = keep;
   $('presets').innerHTML = compositions.map((c,i) =>
     `<button class="preset" data-i="${i}"><b>${c.title}</b><small>${c.id} · ${c.bpm} BPM · ${c.pattern}</small></button>`
   ).join('');
@@ -402,6 +432,11 @@ function applyComp(c) {
     $('math_mix').value = c.patch.math_mix ?? 0;
     $('lfo').value = c.patch.lfo1_rate_hz ?? 0.24;
     $('shimmer').value = c.patch.reverb_shimmer ?? 0.18;
+    if (c.patch.id) $('patch').value = c.patch.id;
+    if (c.patch.normalize_peak) $('normPeak').value = c.patch.normalize_peak;
+    if (c.patch.limiter_ceiling) $('ceiling').value = c.patch.limiter_ceiling;
+    lintMath();
+    pushHist();
     if (c.patch.mod_matrix) {
       matrix = c.patch.mod_matrix.map(row => row.slice());
       drawMatrix();
@@ -411,7 +446,7 @@ function applyComp(c) {
 
 function spec() {
   const tuning = $('tuning').value;
-  return {
+  const s = {
     id: $('id').value, title: $('title').value,
     progression: $('progression').value, pattern: $('pattern').value,
     tuning: tuning === 'equal12_432' ? 'equal12' : tuning,
@@ -421,50 +456,162 @@ function spec() {
     math_expr: $('math').value, math_mix: +$('math_mix').value,
     lfo1_rate_hz: +$('lfo').value, reverb_shimmer: +$('shimmer').value,
     dx7_algorithm: +$('dx7').value || undefined,
+    patch_id: $('patch').value || undefined,
+    limiter_ceiling: +$('ceiling').value,
+    normalize_peak: +$('normPeak').value,
+    dither_amp: +$('dither').value,
     mod_matrix: matrix
   };
+  return s;
 }
+
+function toast(msg, kind) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  $('status').textContent = msg;
+  $('status').className = 'status' + (kind ? ' ' + kind : '');
+}
+
+let specHist = [];
+let specPtr = -1;
+let histLock = false;
+function pushHist() {
+  if (histLock) return;
+  const snap = JSON.stringify(spec());
+  if (specHist[specPtr] === snap) return;
+  specHist = specHist.slice(0, specPtr + 1);
+  specHist.push(snap);
+  if (specHist.length > 40) specHist.shift();
+  specPtr = specHist.length - 1;
+}
+function applySnap(raw) {
+  histLock = true;
+  try {
+    const s = JSON.parse(raw);
+    $('id').value = s.id || '';
+    $('title').value = s.title || '';
+    $('progression').value = s.progression || '';
+    renderChips();
+    if (s.pattern) $('pattern').value = s.pattern;
+    if (s.tuning) $('tuning').value = s.tuning;
+    if (s.bpm) $('bpm').value = s.bpm;
+    if (s.beats_per_chord) $('beats').value = s.beats_per_chord;
+    if (s.math_expr != null) $('math').value = s.math_expr;
+    if (s.math_mix != null) $('math_mix').value = s.math_mix;
+    if (s.lfo1_rate_hz != null) $('lfo').value = s.lfo1_rate_hz;
+    if (s.reverb_shimmer != null) $('shimmer').value = s.reverb_shimmer;
+    if (s.dx7_algorithm != null) $('dx7').value = s.dx7_algorithm;
+    if (s.patch_id != null) $('patch').value = s.patch_id;
+    if (s.limiter_ceiling != null) $('ceiling').value = s.limiter_ceiling;
+    if (s.normalize_peak != null) $('normPeak').value = s.normalize_peak;
+    if (s.dither_amp != null) $('dither').value = s.dither_amp;
+    if (s.mod_matrix) { matrix = s.mod_matrix; drawMatrix(); }
+  } finally { histLock = false; }
+}
+$('undoSpec').onclick = () => {
+  if (specPtr <= 0) { toast('Nothing to undo'); return; }
+  specPtr -= 1; applySnap(specHist[specPtr]); toast('Undid spec change');
+};
+$('redoSpec').onclick = () => {
+  if (specPtr >= specHist.length - 1) { toast('Nothing to redo'); return; }
+  specPtr += 1; applySnap(specHist[specPtr]); toast('Redid spec change');
+};
+
+let lintTimer;
+async function lintMath() {
+  const formula = $('math').value.trim();
+  const el = $('mathLint');
+  if (!formula || +$('math_mix').value <= 0) {
+    el.className = 'lint';
+    el.textContent = formula ? 'Formula present — raise Math mix above 0 to hear it' : 'No formula (FM patch only)';
+    return;
+  }
+  try {
+    const r = await fetch('/api/lint', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ math_expr: formula }) });
+    const data = await r.json();
+    if (data.ok) { el.className = 'lint ok'; el.textContent = 'Formula compiles'; }
+    else { el.className = 'lint err'; el.textContent = data.error || 'parse error'; }
+  } catch (e) { el.className = 'lint err'; el.textContent = String(e); }
+}
+$('math').addEventListener('input', () => { clearTimeout(lintTimer); lintTimer = setTimeout(() => { lintMath(); pushHist(); }, 280); });
+$('math_mix').addEventListener('change', lintMath);
 
 $('jsonBtn').onclick = () => { $('jsonOut').textContent = JSON.stringify(spec(), null, 2); };
 let lastWavFile = null;
 $('renderBtn').onclick = async () => {
-  $('status').textContent = 'Rendering 64-bit float DSP…';
-  $('status').className = 'status';
+  toast('Rendering 64-bit float DSP…');
+  $('renderBtn').disabled = true;
   try {
+    await lintMath();
+    if ($('mathLint').classList.contains('err') && +$('math_mix').value > 0) {
+      throw new Error('Fix the formula before rendering');
+    }
     const r = await fetch('/api/render', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec()) });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || 'render failed');
     lastWavFile = (data.wav_url || '').split('/').pop();
-    $('status').className = 'status ok';
-    $('status').textContent = `OK  ${data.duration_secs.toFixed(2)}s  peak ${data.peak_dbfs.toFixed(2)} dBFS  ${data.render_ms.toFixed(0)} ms`;
+    const mono = data.mono_compatible === false ? '  MONO CHECK FAIL' : '';
+    toast(`Rendered ${data.duration_secs.toFixed(2)}s  peak ${data.peak_dbfs.toFixed(2)} dBFS  ${data.stereo_width_label || ''}${mono} — now you can save a library block`, 'ok');
     $('trace').textContent = data.ascii_envelope || '';
     $('player').src = data.wav_url;
     $('player').play().catch(()=>{});
+    pushHist();
   } catch (e) {
-    $('status').className = 'status err';
-    $('status').textContent = String(e);
+    toast(String(e), 'err');
+  } finally {
+    $('renderBtn').disabled = false;
   }
+};
+
+$('midiBtn').onclick = async () => {
+  toast('Exporting MIDI…');
+  try {
+    const r = await fetch('/api/midi', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec()) });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'midi failed');
+    toast(`MIDI ${data.notes} notes @ ${data.bpm} BPM`, 'ok');
+    const a = document.createElement('a');
+    a.href = data.midi_url; a.download = ''; a.click();
+  } catch (e) { toast(String(e), 'err'); }
 };
 
 async function saveBlock(format) {
   const s = spec();
-  const body = {
-    action: 'save',
-    id: s.id || ('block_' + Date.now()),
-    title: s.title,
-    progression: s.progression,
-    bpm: s.bpm,
-    pattern: s.pattern,
-    tuning: s.tuning,
-    math_expr: s.math_expr,
-    format,
-    keep: $('keepPolicy').value,
-    wav_file: lastWavFile
-  };
-  const r = await fetch('/api/library', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  const data = await r.json();
-  $('status').textContent = data.ok === false ? (data.error || 'save failed') : 'Saved to library as ' + format;
-  loadLibrary();
+  if ((format === 'wav' || format === 'mp3') && !lastWavFile) {
+    toast('Render a WAV first, then save audio to the library.', 'err');
+    return;
+  }
+  const btn = format === 'wav' ? $('saveWav') : format === 'mp3' ? $('saveMp3') : $('saveJson');
+  btn.classList.add('on');
+  toast('Saving ' + format + ' block…');
+  try {
+    const body = {
+      action: 'save',
+      id: s.id || ('block_' + Date.now()),
+      title: s.title,
+      progression: s.progression,
+      bpm: s.bpm,
+      pattern: s.pattern,
+      tuning: s.tuning,
+      math_expr: s.math_expr,
+      format,
+      keep: $('keepPolicy').value,
+      wav_file: lastWavFile
+    };
+    const r = await fetch('/api/library', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if (data.ok === false) throw new Error(data.error || 'save failed');
+    toast('Saved to Library tab as ' + format.toUpperCase() + ' — open Library / Blocks to see it.', 'ok');
+    loadLibrary();
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    document.querySelector('[data-tab="library"]').classList.add('on');
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+    $('pane-library').classList.add('on');
+  } catch (e) {
+    toast(String(e), 'err');
+    btn.classList.remove('on');
+  }
 }
 $('saveWav').onclick = () => saveBlock('wav');
 $('saveMp3').onclick = () => saveBlock('mp3');
@@ -497,13 +644,20 @@ $('uploadWav').onchange = async (ev) => {
   const r = await fetch('/api/analyze', { method:'POST', body: buf });
   const data = await r.json();
   if (data.ok === false) { $('analyzeOut').textContent = data.error; return; }
-  $('analyzeOut').innerHTML = `<b>Sketch</b> ~${(data.confidence*100||0).toFixed(0)}% · BPM ${data.bpm_est||'?'} · ${data.key_guess||''}<br>Progression: <code>${data.progression||'(none)'}</code><br><small>${(data.caveats||[]).join(' ')}</small>`;
-  if (data.progression) { $('progression').value = data.progression; renderChips(); }
+  const chords = data.chords || [];
+  $('analyzeOut').innerHTML = `<b>Sketch</b> ~${(data.confidence*100||0).toFixed(0)}% overall · BPM ${data.bpm_est||'?'} · ${data.key_guess||''}<br><small>${(data.caveats||[]).join(' ')}</small>`;
+  if (chords.length) {
+    $('pchips').innerHTML = chords.map((c,i) => {
+      const pct = Math.round((c.confidence || 0) * 100);
+      return `<button type="button" class="pchip" data-i="${i}" title="sketch ${pct}%">${c.symbol}<small style="margin-left:6px;color:var(--muted)">${pct}%</small></button>`;
+    }).join('');
+  }
+  if (data.progression) { $('progression').value = data.progression; if (!chords.length) renderChips(); }
   if (data.bpm_est) $('bpm').value = Math.round(data.bpm_est);
 };
 
 drawMatrix();
-loadPresets().catch(e => { $('status').className = 'status err'; $('status').textContent = e; });
+loadPresets().then(() => { lintMath(); pushHist(); }).catch(e => { $('status').className = 'status err'; $('status').textContent = e; });
 loadLibrary().catch(()=>{});
 </script>
 </body>

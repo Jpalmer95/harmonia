@@ -572,8 +572,12 @@ fn cmd_inspect(args: &[String]) -> Result<(), String> {
         rep.zero_crossing_hz_est
     );
     println!(
-        "  Stereo Width     : {:.3} L/R correlation",
-        rep.stereo_width_corr
+        "  Stereo Width     : {:.3} L/R correlation ({})",
+        rep.stereo_width_corr, rep.stereo_width_label
+    );
+    println!(
+        "  Mono check       : {}",
+        if rep.mono_compatible { "OK" } else { "MAY COLLAPSE — check phase" }
     );
     println!("  Envelope         : [{}]", rep.ascii_envelope);
     println!("╚══════════════════════════════════════════════════════════════════════════╝");

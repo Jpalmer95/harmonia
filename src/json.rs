@@ -277,6 +277,9 @@ impl FmPatch {
             self.reverb_shimmer
         ));
         s.push_str(&format!("{pad2}\"master_drive\": {:.3},\n", self.master_drive));
+        s.push_str(&format!("{pad2}\"normalize_peak\": {:.3},\n", self.normalize_peak));
+        s.push_str(&format!("{pad2}\"dither_amp\": {:.3},\n", self.dither_amp));
+        s.push_str(&format!("{pad2}\"limiter_ceiling\": {:.3},\n", self.limiter_ceiling));
 
         // 6x6 Mod Matrix
         s.push_str(&format!("{pad2}\"mod_matrix\": [\n"));
@@ -388,6 +391,15 @@ impl FmPatch {
         }
         if let Some(v) = val.get("master_drive").and_then(|v| v.as_f64()) {
             self.master_drive = v.clamp(0.5, 3.0);
+        }
+        if let Some(v) = val.get("normalize_peak").and_then(|v| v.as_f64()) {
+            self.normalize_peak = v.clamp(0.1, 0.999);
+        }
+        if let Some(v) = val.get("dither_amp").and_then(|v| v.as_f64()) {
+            self.dither_amp = v.clamp(0.0, 4.0);
+        }
+        if let Some(v) = val.get("limiter_ceiling").and_then(|v| v.as_f64()) {
+            self.limiter_ceiling = v.clamp(0.2, 1.0);
         }
 
         if let Some(rows) = val.get("mod_matrix").and_then(|v| v.as_arr()) {

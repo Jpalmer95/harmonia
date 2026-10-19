@@ -63,6 +63,7 @@ impl CompositionSpec {
         }
 
         process_master_chain(&mut buf, &self.patch);
+        buf.dither_amp = self.patch.dither_amp;
         Ok(buf)
     }
 }

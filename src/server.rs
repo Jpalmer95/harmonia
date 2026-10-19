@@ -135,6 +135,19 @@ fn dispatch(
                 escape_json(f.description)
             ));
         }
+        json.push_str("\n  ],\n  \"patches\": [\n");
+        let patches = crate::presets::builtin_patches();
+        for (i, p) in patches.iter().enumerate() {
+            if i > 0 {
+                json.push_str(",\n");
+            }
+            json.push_str(&format!(
+                "    {{\"id\": \"{}\", \"name\": \"{}\", \"algorithm\": \"{}\"}}",
+                escape_json(&p.id),
+                escape_json(&p.name),
+                escape_json(&p.algorithm_name)
+            ));
+        }
         json.push_str("\n  ]\n}\n");
         return send_response(
             stream,
@@ -151,7 +164,12 @@ fn dispatch(
         }
         let file_path = project_dir.join("renders").join(filename);
         if let Ok(bytes) = fs::read(&file_path) {
-            return send_response(stream, "200 OK", "audio/wav", &bytes);
+            let ctype = if filename.ends_with(".mid") {
+                "audio/midi"
+            } else {
+                "audio/wav"
+            };
+            return send_response(stream, "200 OK", ctype, &bytes);
         } else {
             return send_response(stream, "404 Not Found", "text/plain", b"WAV not found");
         }
@@ -317,6 +335,87 @@ fn dispatch(
         }
     }
 
+    if method == "POST" && path == "/api/lint" {
+        let text = String::from_utf8_lossy(body);
+        let parsed = parse_json(&text).ok();
+        let formula = parsed
+            .as_ref()
+            .and_then(|v| v.get("math_expr").and_then(|x| x.as_str()))
+            .unwrap_or(text.trim());
+        if formula.is_empty() {
+            return send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                b"{\"ok\":true,\"empty\":true}",
+            );
+        }
+        match crate::math_engine::CompiledExpr::compile(formula) {
+            Ok(_) => {
+                let resp = format!(
+                    "{{\"ok\":true,\"empty\":false,\"ops\":0,\"message\":\"formula compiles\"}}"
+                );
+                return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+            }
+            Err(e) => {
+                let resp = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+            }
+        }
+    }
+
+    if method == "POST" && path == "/api/midi" {
+        let text = String::from_utf8_lossy(body);
+        let parsed = match parse_json(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        let spec = match CompositionSpec::from_json_val(&parsed) {
+            Ok(s) => s,
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        let chords = crate::theory::parse_progression(&spec.progression, spec.beats_per_chord);
+        let (events, _) = crate::theory::generate_multiline_events(
+            &chords,
+            spec.bpm,
+            spec.pattern.clone(),
+            spec.tuning.clone(),
+        );
+        let midi = crate::midi::MidiFile::from_note_events(&events, spec.bpm, |ev| {
+            crate::midi::hz_to_midi(ev.target_freq_hz)
+        });
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let safe_id: String = spec
+            .id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        let filename = format!("{}_{}.mid", safe_id, ts);
+        let renders_dir = project_dir.join("renders");
+        let _ = fs::create_dir_all(&renders_dir);
+        let out_path = renders_dir.join(&filename);
+        if let Err(e) = crate::midi::save_smf(&out_path, &midi) {
+            let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+            return send_response(stream, "500 Internal Server Error", "application/json", err.as_bytes());
+        }
+        let resp = format!(
+            "{{\"ok\":true,\"midi_url\":\"/renders/{}\",\"notes\":{},\"bpm\":{:.1}}}",
+            escape_json(&filename),
+            midi.notes.len(),
+            midi.bpm()
+        );
+        return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+    }
+
     if method == "POST" && path == "/api/render" {
         let body_str = String::from_utf8_lossy(body);
         let parsed = match parse_json(&body_str) {
@@ -387,7 +486,7 @@ fn dispatch(
                 }
 
                 let resp = format!(
-                    "{{\n  \"ok\": true,\n  \"wav_url\": \"/renders/{}\",\n  \"file_path\": \"{}\",\n  \"render_ms\": {:.2},\n  \"sample_rate\": {},\n  \"bit_depth\": \"{}\",\n  \"duration_secs\": {:.2},\n  \"peak_dbfs\": {:.2},\n  \"rms_dbfs\": {:.2},\n  \"crest_factor_db\": {:.2},\n  \"stereo_corr\": {:.3},\n  \"ascii_envelope\": \"{}\"\n}}",
+                    "{{\n  \"ok\": true,\n  \"wav_url\": \"/renders/{}\",\n  \"file_path\": \"{}\",\n  \"render_ms\": {:.2},\n  \"sample_rate\": {},\n  \"bit_depth\": \"{}\",\n  \"duration_secs\": {:.2},\n  \"peak_dbfs\": {:.2},\n  \"rms_dbfs\": {:.2},\n  \"crest_factor_db\": {:.2},\n  \"stereo_corr\": {:.3},\n  \"mono_compatible\": {},\n  \"stereo_width_label\": \"{}\",\n  \"ascii_envelope\": \"{}\"\n}}",
                     escape_json(&filename),
                     escape_json(&out_path.to_string_lossy()),
                     elapsed_ms,
@@ -398,6 +497,8 @@ fn dispatch(
                     report.rms_dbfs,
                     report.crest_factor_db,
                     report.stereo_width_corr,
+                    if report.mono_compatible { "true" } else { "false" },
+                    escape_json(&report.stereo_width_label),
                     escape_json(&report.ascii_envelope)
                 );
                 return send_response(stream, "200 OK", "application/json", resp.as_bytes());
