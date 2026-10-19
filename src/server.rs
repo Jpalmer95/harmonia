@@ -319,17 +319,66 @@ fn dispatch(
                     mp3_rel: None,
                     analyze_json: None,
                 };
-                if let Some(wav_name) = parsed.get("wav_file").and_then(|v| v.as_str()) {
-                    let p = project_dir.join("renders").join(wav_name);
-                    if let Ok(buf) = load_wav_file(&p) {
-                        if let Ok((w, m)) = attach_audio(project_dir, &id, &buf, format) {
-                            block.wav_rel = w;
-                            block.mp3_rel = m;
+                if format == "wav" || format == "mp3" || format == "both" {
+                    if let Some(wav_name) = parsed.get("wav_file").and_then(|v| v.as_str()) {
+                        let p = project_dir.join("renders").join(wav_name);
+                        match load_wav_file(&p) {
+                            Ok(buf) => match attach_audio(project_dir, &id, &buf, format) {
+                                Ok((w, m)) => {
+                                    block.wav_rel = w;
+                                    block.mp3_rel = m;
+                                }
+                                Err(e) => {
+                                    let err = format!(
+                                        "{{\"ok\":false,\"error\":\"{}\"}}",
+                                        escape_json(&e)
+                                    );
+                                    return send_response(
+                                        stream,
+                                        "400 Bad Request",
+                                        "application/json",
+                                        err.as_bytes(),
+                                    );
+                                }
+                            },
+                            Err(e) => {
+                                let err = format!(
+                                    "{{\"ok\":false,\"error\":\"could not load render WAV: {}\"}}",
+                                    escape_json(&e)
+                                );
+                                return send_response(
+                                    stream,
+                                    "400 Bad Request",
+                                    "application/json",
+                                    err.as_bytes(),
+                                );
+                            }
                         }
+                    } else {
+                        return send_response(
+                            stream,
+                            "400 Bad Request",
+                            "application/json",
+                            b"{\"ok\":false,\"error\":\"Render a WAV first, then save audio.\"}",
+                        );
                     }
                 }
+                let saved_id = block.id.clone();
+                let wav_rel = block.wav_rel.clone();
                 let _ = add_block(project_dir, block);
-                let json = index_json(project_dir);
+                let mut json = index_json(project_dir);
+                // index_json already has "ok": true — also surface the saved id for the UI.
+                if json.starts_with('{') {
+                    json = format!(
+                        "{{\n  \"saved_id\": \"{}\",\n  \"saved_wav\": {},{}",
+                        escape_json(&saved_id),
+                        match &wav_rel {
+                            Some(p) => format!("\"{}\"", escape_json(p)),
+                            None => "null".into(),
+                        },
+                        json.trim_start_matches('{')
+                    );
+                }
                 return send_response(stream, "200 OK", "application/json", json.as_bytes());
             }
         }

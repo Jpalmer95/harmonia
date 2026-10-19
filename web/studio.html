@@ -70,6 +70,19 @@
   .lint { font-family: ui-monospace, Menlo, monospace; font-size: 12px; margin-top: 4px; color: var(--muted); min-height: 18px; }
   .lint.ok { color: var(--ok); } .lint.err { color: var(--rose); }
   .ghost.on { background: #163532; color: var(--gold-2); border-color: var(--gold); }
+  .block {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 10px;
+  }
+  .block b { display: block; color: var(--gold-2); font-size: 13px; }
+  .block small { display: block; color: var(--muted); margin-top: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .block audio { width: 100%; margin-top: 8px; }
+  .block .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .block .acts button { width: auto; margin: 0; padding: 7px 10px; font-size: 10px; letter-spacing: .04em; }
+  .block .acts a.ghost { width: auto; margin: 0; padding: 7px 10px; font-size: 10px; letter-spacing: .04em; text-decoration: none; display: inline-block; }
+  .tel-actions { margin-top: 10px; }
+  .tel-actions .primary { margin-top: 8px; }
+  #pane-library .block { cursor: default; }
 </style>
 </head>
 <body>
@@ -204,11 +217,12 @@
 
     <div class="pane" id="pane-library">
     <h2>Harmonia Blocks</h2>
-    <p class="help">JSON is canonical (tiny). WAV/MP3 are optional. Import a recording for a <b>pitch/chord sketch</b> — not an FM equation dump.</p>
+    <p class="help">Each card is a saved recipe. If it has audio, Play it here. <b>Edit in playground</b> loads chords/patch so you can re-render. JSON is canonical; WAV/MP3 are optional attachments.</p>
     <label>Upload WAV to sketch</label>
     <input type="file" id="uploadWav" accept="audio/wav,.wav" />
     <div id="analyzeOut" class="help"></div>
     <button class="ghost" id="refreshLib">Refresh library</button>
+    <div class="toast" id="libToast"></div>
     <div id="libList"></div>
     </div>
 
@@ -242,6 +256,12 @@
     <div class="status" id="status">Ready. Click a flagship or write a progression.</div>
     <div class="trace" id="trace"></div>
     <audio id="player" controls></audio>
+    <div class="tel-actions" id="renderSave" hidden>
+      <p class="hint" id="telHint">This is the last render. Save it into Library if you want to keep the sound.</p>
+      <button class="primary" id="telSaveWav">Save this WAV to library</button>
+      <button class="ghost" id="telSaveJson">Save recipe only (no audio)</button>
+      <a class="ghost" id="telDownload" href="#" download style="display:block;text-align:center;text-decoration:none;margin-top:8px;">Download WAV</a>
+    </div>
     <pre id="jsonOut" style="font-size:11px;color:var(--muted);overflow:auto;max-height:240px;"></pre>
   </section>
 </div>
@@ -556,6 +576,10 @@ $('renderBtn').onclick = async () => {
     $('trace').textContent = data.ascii_envelope || '';
     $('player').src = data.wav_url;
     $('player').play().catch(()=>{});
+    $('renderSave').hidden = false;
+    $('telDownload').href = data.wav_url;
+    $('telDownload').download = lastWavFile || 'harmonia.wav';
+    $('telHint').textContent = 'Last render: ' + (lastWavFile || 'wav') + '. Save it to Library to keep the sound, or download it.';
     pushHist();
   } catch (e) {
     toast(String(e), 'err');
@@ -595,6 +619,7 @@ async function saveBlock(format) {
       pattern: s.pattern,
       tuning: s.tuning,
       math_expr: s.math_expr,
+      patch_id: s.patch_id,
       format,
       keep: $('keepPolicy').value,
       wav_file: lastWavFile
@@ -602,7 +627,9 @@ async function saveBlock(format) {
     const r = await fetch('/api/library', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const data = await r.json();
     if (data.ok === false) throw new Error(data.error || 'save failed');
-    toast('Saved to Library tab as ' + format.toUpperCase() + ' — open Library / Blocks to see it.', 'ok');
+    const wavNote = data.saved_wav ? (' + audio ' + data.saved_wav) : (format === 'json' ? ' (recipe only)' : '');
+    toast('Saved “' + (s.title || s.id) + '”' + wavNote + '. Cards below have Play / Edit / Delete.', 'ok');
+    libToast('Saved ' + (data.saved_id || s.id) + wavNote, 'ok');
     loadLibrary();
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
     document.querySelector('[data-tab="library"]').classList.add('on');
@@ -616,22 +643,95 @@ async function saveBlock(format) {
 $('saveWav').onclick = () => saveBlock('wav');
 $('saveMp3').onclick = () => saveBlock('mp3');
 $('saveJson').onclick = () => saveBlock('json');
+$('telSaveWav').onclick = () => saveBlock('wav');
+$('telSaveJson').onclick = () => saveBlock('json');
+
+function libToast(msg, kind) {
+  const el = $('libToast');
+  el.textContent = msg;
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+}
+
+function audioUrl(rel) {
+  if (!rel) return '';
+  return rel.startsWith('/') ? rel : '/' + rel.replace(/^\/+/, '');
+}
+
+function goPlayground() {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  document.querySelector('[data-tab="play"]').classList.add('on');
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+  $('pane-play').classList.add('on');
+}
 
 async function loadLibrary() {
   const r = await fetch('/api/library');
   const data = await r.json();
   const blocks = data.blocks || [];
-  $('libList').innerHTML = blocks.map(b =>
-    `<button class="preset" data-block="${b.id}"><b>${b.title}</b><small>${b.id} · ${b.kind} · ${b.keep} · ${b.progression || '(no chords)'}</small></button>`
-  ).join('') || '<p class="help">Empty. Render something, then + JSON / + WAV.</p>';
-  document.querySelectorAll('[data-block]').forEach(btn => btn.onclick = () => {
-    const b = blocks.find(x => x.id === btn.dataset.block);
+  if (!blocks.length) {
+    $('libList').innerHTML = '<p class="help">Empty. Render a piece, then use <b>Save this WAV to library</b> under the player (or Save JSON for the recipe only).</p>';
+    return;
+  }
+  $('libList').innerHTML = blocks.map(b => {
+    const src = audioUrl(b.wav || b.mp3);
+    const audio = src ? `<audio controls preload="none" src="${src}"></audio>` : '<small>No audio attached — JSON recipe only. Load it and Render to hear it.</small>';
+    const dl = src ? `<a class="ghost" href="${src}" download style="width:auto;margin:0;padding:7px 10px;font-size:10px;text-decoration:none;">Download</a>` : '';
+    return `<div class="block" data-block="${b.id}">
+      <b>${b.title || b.id}</b>
+      <small>${b.id} · ${b.kind || 'block'} · ${b.keep || ''} · ${b.bpm || '?'} BPM</small>
+      <small>${b.progression || '(no chords)'}</small>
+      ${audio}
+      <div class="acts">
+        <button type="button" class="ghost" data-act="load">Edit in playground</button>
+        ${src ? '<button type="button" class="ghost" data-act="play">Play</button>' : ''}
+        ${dl}
+        <button type="button" class="ghost" data-act="delete">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+  $('libList').querySelectorAll('.block').forEach(card => {
+    const id = card.dataset.block;
+    const b = blocks.find(x => x.id === id);
     if (!b) return;
-    $('id').value = b.id; $('title').value = b.title;
-    if (b.progression) { $('progression').value = b.progression; renderChips(); }
-    if (b.pattern) $('pattern').value = b.pattern;
-    if (b.bpm) $('bpm').value = b.bpm;
-    if (b.math_expr) { $('math').value = b.math_expr; $('math_mix').value = '0.7'; }
+    card.querySelectorAll('[data-act]').forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'load') {
+          $('id').value = b.id;
+          $('title').value = b.title || b.id;
+          if (b.progression) { $('progression').value = b.progression; renderChips(); }
+          if (b.pattern) $('pattern').value = b.pattern;
+          if (b.bpm) $('bpm').value = b.bpm;
+          if (b.tuning) $('tuning').value = b.tuning;
+          if (b.patch_id) $('patch').value = b.patch_id;
+          if (b.math_expr) { $('math').value = b.math_expr; $('math_mix').value = '0.7'; lintMath(); }
+          const src = audioUrl(b.wav || b.mp3);
+          if (src) {
+            $('player').src = src;
+            $('renderSave').hidden = false;
+            $('telDownload').href = src;
+            $('telHint').textContent = 'Loaded from library. Re-render to make a new WAV, or play this one.';
+          }
+          goPlayground();
+          toast('Loaded “' + (b.title || b.id) + '” into the playground', 'ok');
+          return;
+        }
+        if (act === 'play') {
+          const a = card.querySelector('audio');
+          if (a) { a.play().catch(()=>{}); }
+          return;
+        }
+        if (act === 'delete') {
+          if (!confirm('Delete block ' + id + '?')) return;
+          const rr = await fetch('/api/library', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'delete', id }) });
+          const dd = await rr.json();
+          if (dd.ok === false) { libToast(dd.error || 'delete failed', 'err'); return; }
+          libToast('Deleted ' + id, 'ok');
+          loadLibrary();
+        }
+      };
+    });
   });
 }
 $('refreshLib').onclick = loadLibrary;
