@@ -43,11 +43,29 @@
   .help { color: var(--muted); font-size: 13px; line-height: 1.45; }
   .help code { color: var(--cyan); font-size: 12px; }
   .keys { display: flex; gap: 2px; margin-top: 8px; }
+  .keywrap { position: relative; }
   .key { flex: 1; height: 64px; background: #f3ecd8; color: #1a1406; border-radius: 0 0 6px 6px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font-size: 11px; }
   .key.black { background: #1a1406; color: var(--gold-2); height: 42px; margin: 0 -6px; z-index: 1; flex: .65; }
   footer { color: var(--muted); font-size: 12px; padding: 0 22px 24px; }
   .pane { display: none; } .pane.on { display: block; }
   .tiny { width: auto; margin: 4px 4px 0 0; padding: 7px 10px; }
+  .hint { color: var(--muted); font-size: 11px; margin: 4px 0 8px; }
+  .qualities { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px; }
+  .qchip, .pchip {
+    cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+    border-radius: 999px; padding: 4px 9px; font-size: 11px; letter-spacing: 0; text-transform: none; width: auto; margin: 0;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .qchip.on, .pchip.on { border-color: var(--gold); color: var(--gold-2); background: #241e12; }
+  .pchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; min-height: 28px; }
+  .pchip { position: relative; padding-right: 22px; }
+  .pchip .x { position: absolute; right: 6px; top: 3px; color: var(--rose); font-size: 10px; }
+  .palette {
+    position: absolute; z-index: 20; background: var(--panel); border: 1px solid var(--gold);
+    border-radius: 10px; padding: 8px; width: 280px; box-shadow: 0 12px 40px #000a;
+  }
+  .palette b { display: block; color: var(--gold-2); font-size: 12px; margin-bottom: 6px; }
+  .palette .qchip { margin: 2px; }
 </style>
 </head>
 <body>
@@ -75,8 +93,32 @@
     <label>Title / ID</label>
     <div class="row"><input id="id" value="studio_session" /><input id="title" value="Studio Session" /></div>
     <label>Chord progression</label>
+    <div class="pchips" id="pchips"></div>
     <textarea id="progression">Cm9 -&gt; Abmaj9#11 -&gt; Fm11 -&gt; G7b9</textarea>
+    <p class="hint">Click a quality, then a key. Hold or right-click a key for more (maj9#11, 7alt, slash bass…). Click a chip to replace it, × to remove. Undo pops the last chord.</p>
+    <label>Chord quality</label>
+    <div class="qualities" id="qualities"></div>
+    <div class="row">
+      <div><label>Slash bass</label>
+        <select id="slash"><option value="">(none)</option></select>
+      </div>
+      <div><label>Length</label>
+        <select id="clen">
+          <option value="">1 bar</option>
+          <option value="*2">*2</option>
+          <option value="*4">*4</option>
+          <option value="*8">*8</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <button type="button" class="ghost tiny" id="undoChord">Undo last</button>
+      <button type="button" class="ghost tiny" id="clearProg">Clear</button>
+    </div>
+    <div class="keywrap">
     <div class="keys" id="keys"></div>
+    <div id="palette" class="palette" hidden></div>
+    </div>
     <div class="row">
       <div><label>Pattern</label>
         <select id="pattern">
@@ -150,7 +192,7 @@
     <h2>How to tinker</h2>
     <div class="help">
       <p><b>1. Hear something immediately.</b> Click a flagship on the left, then Render. <code>bach_meets_vangelis</code> is the morphing FM brass weave.</p>
-      <p><b>2. Change the music, not the engine.</b> Edit the chord string. Syntax: <code>Cm9 -&gt; Abmaj9#11</code>, slash bass <code>Cmaj9/E</code>, length <code>Cm9*8</code>, raw Hz <code>[220, 275, 330]</code>.</p>
+      <p><b>2. Change the music, not the engine.</b> Pick a quality chip, then a piano key. Hold or right-click a key for more (maj9#11, 7alt, slash bass). Click a progression chip to replace it. Or type: <code>Cm9 -&gt; Abmaj9#11</code>, slash bass <code>Cmaj9/E</code>, length <code>Cm9*8</code>, raw Hz <code>[220, 275, 330]</code>.</p>
       <p><b>3. Swap the weave.</b> Cthulhu = arpeggio + pad. Bach = 16ths. Cathedral = pads. Stranger = 80s pulse. 3v4 = Glass. Counterpoint = four gliding voices.</p>
       <p><b>4. Type physics.</b> Variables: <code>t f w env mod_idx lfo1 phi</code>. Functions: <code>fm(fc,fm,idx,t) fm3(...) cheb(n,x) harm(w,n,r) bell(...) ks(f,t,damp)</code>.</p>
       <p><b>5. Microtone.</b> Just Intonation locks 5:4 / 3:2. <code>edo31</code> is 31 equal steps. Werckmeister is historical keyboard temperament.</p>
@@ -210,12 +252,116 @@ function drawMatrix() {
 }
 
 const NOTES = [['C',false],['C#',true],['D',false],['D#',true],['E',false],['F',false],['F#',true],['G',false],['G#',true],['A',false],['A#',true],['B',false]];
-$('keys').innerHTML = NOTES.map(([n,blk]) => `<button class="key ${blk?'black':''}" data-n="${n}">${n}</button>`).join('');
-$('keys').querySelectorAll('.key').forEach(b => b.onclick = () => {
-  const cur = $('progression').value.trim();
-  const add = b.dataset.n + 'm9';
-  $('progression').value = cur ? cur + ' -> ' + add : add;
+const QUALITIES = [
+  {s:'', l:'maj'}, {s:'m', l:'min'}, {s:'m9', l:'m9'}, {s:'maj9', l:'maj9'},
+  {s:'maj9#11', l:'maj9#11'}, {s:'m11', l:'m11'}, {s:'7', l:'7'}, {s:'9', l:'9'},
+  {s:'7b9', l:'7b9'}, {s:'7alt', l:'7alt'}, {s:'m7b5', l:'ø'}, {s:'dim7', l:'dim7'},
+  {s:'sus4', l:'sus4'}, {s:'add9', l:'add9'}, {s:'6', l:'6'}, {s:'13', l:'13'}
+];
+const PALETTE_Q = QUALITIES.concat([
+  {s:'maj7', l:'maj7'}, {s:'m7', l:'m7'}, {s:'11', l:'11'}, {s:'13sus4', l:'13sus'},
+  {s:'aug', l:'aug'}, {s:'sus2', l:'sus2'}, {s:'maj7#11', l:'Δ#11'}
+]);
+let quality = 'm9';
+let editIndex = -1;
+
+$('slash').innerHTML = '<option value="">(none)</option>' + NOTES.map(([n]) => `<option value="/${n}">/${n}</option>`).join('');
+$('qualities').innerHTML = QUALITIES.map(q =>
+  `<button type="button" class="qchip${q.s==='m9'?' on':''}" data-q="${q.s}">${q.l}</button>`
+).join('');
+$('qualities').querySelectorAll('.qchip').forEach(b => b.onclick = () => {
+  quality = b.dataset.q;
+  $('qualities').querySelectorAll('.qchip').forEach(x => x.classList.toggle('on', x === b));
 });
+
+function splitProg(s) {
+  return s.split(/\s*(?:->|→|\|)\s*/).map(x => x.trim()).filter(Boolean);
+}
+function joinProg(parts) { return parts.join(' -> '); }
+function tokenFor(root, q) {
+  return root + q + ($('slash').value || '') + ($('clen').value || '');
+}
+function setProg(parts) {
+  $('progression').value = joinProg(parts);
+  renderChips();
+}
+function renderChips() {
+  const parts = splitProg($('progression').value);
+  $('pchips').innerHTML = parts.map((p,i) =>
+    `<button type="button" class="pchip${i===editIndex?' on':''}" data-i="${i}">${p}<span class="x" data-x="${i}">×</span></button>`
+  ).join('');
+  $('pchips').querySelectorAll('.pchip').forEach(b => {
+    b.onclick = (e) => {
+      if (e.target.dataset.x != null) {
+        const parts = splitProg($('progression').value);
+        parts.splice(+e.target.dataset.x, 1);
+        editIndex = -1;
+        setProg(parts);
+        return;
+      }
+      editIndex = +b.dataset.i;
+      renderChips();
+    };
+  });
+}
+$('progression').addEventListener('input', () => { editIndex = -1; renderChips(); });
+
+function commitChord(token) {
+  const parts = splitProg($('progression').value);
+  if (editIndex >= 0 && editIndex < parts.length) {
+    parts[editIndex] = token;
+    editIndex = -1;
+  } else {
+    parts.push(token);
+  }
+  setProg(parts);
+}
+
+function hidePalette() { $('palette').hidden = true; }
+function showPalette(root, x, y) {
+  const pal = $('palette');
+  pal.hidden = false;
+  pal.style.position = 'absolute';
+  pal.style.left = Math.max(8, Math.min(x, 220)) + 'px';
+  pal.style.top = Math.max(8, y) + 'px';
+  pal.innerHTML = `<b>${root} — pick a quality</b>` + PALETTE_Q.map(q =>
+    `<button type="button" class="qchip" data-tok="${root}${q.s}">${root}${q.l}</button>`
+  ).join('') + `<div style="margin-top:6px"><button type="button" class="qchip" data-tok="${root}maj9/${NOTES[(NOTES.findIndex(n=>n[0]===root)+4)%12][0]}">${root}maj9/3rd</button></div>`;
+  pal.querySelectorAll('[data-tok]').forEach(b => b.onclick = () => {
+    commitChord(b.dataset.tok + ($('clen').value || ''));
+    hidePalette();
+  });
+}
+
+$('keys').innerHTML = NOTES.map(([n,blk]) => `<button type="button" class="key ${blk?'black':''}" data-n="${n}">${n}</button>`).join('');
+let skipClick = false;
+$('keys').querySelectorAll('.key').forEach(b => {
+  let hold;
+  b.onclick = () => { if (skipClick) { skipClick = false; return; } commitChord(tokenFor(b.dataset.n, quality)); };
+  b.oncontextmenu = (e) => {
+    e.preventDefault();
+    const r = $('keys').getBoundingClientRect();
+    showPalette(b.dataset.n, e.clientX - r.left, e.clientY - r.top);
+  };
+  b.onpointerdown = () => {
+    hold = setTimeout(() => {
+      skipClick = true;
+      showPalette(b.dataset.n, 8, b.offsetTop + 52);
+    }, 420);
+  };
+  b.onpointerup = b.onpointerleave = () => clearTimeout(hold);
+});
+document.addEventListener('click', (e) => {
+  if (!$('palette').contains(e.target) && !e.target.classList.contains('key')) hidePalette();
+});
+renderChips();
+$('undoChord').onclick = () => {
+  const parts = splitProg($('progression').value);
+  parts.pop();
+  editIndex = -1;
+  setProg(parts);
+};
+$('clearProg').onclick = () => { editIndex = -1; setProg([]); };
 
 for (let i = 1; i <= 32; i++) {
   const o = document.createElement('option');
@@ -247,6 +393,7 @@ async function loadPresets() {
 function applyComp(c) {
   $('id').value = c.id; $('title').value = c.title;
   $('progression').value = c.progression;
+  renderChips();
   $('pattern').value = c.pattern;
   $('tuning').value = c.tuning || 'equal12';
   $('bpm').value = c.bpm; $('beats').value = c.beats_per_chord;
@@ -334,7 +481,7 @@ async function loadLibrary() {
     const b = blocks.find(x => x.id === btn.dataset.block);
     if (!b) return;
     $('id').value = b.id; $('title').value = b.title;
-    if (b.progression) $('progression').value = b.progression;
+    if (b.progression) { $('progression').value = b.progression; renderChips(); }
     if (b.pattern) $('pattern').value = b.pattern;
     if (b.bpm) $('bpm').value = b.bpm;
     if (b.math_expr) { $('math').value = b.math_expr; $('math_mix').value = '0.7'; }
@@ -351,7 +498,7 @@ $('uploadWav').onchange = async (ev) => {
   const data = await r.json();
   if (data.ok === false) { $('analyzeOut').textContent = data.error; return; }
   $('analyzeOut').innerHTML = `<b>Sketch</b> ~${(data.confidence*100||0).toFixed(0)}% · BPM ${data.bpm_est||'?'} · ${data.key_guess||''}<br>Progression: <code>${data.progression||'(none)'}</code><br><small>${(data.caveats||[]).join(' ')}</small>`;
-  if (data.progression) $('progression').value = data.progression;
+  if (data.progression) { $('progression').value = data.progression; renderChips(); }
   if (data.bpm_est) $('bpm').value = Math.round(data.bpm_est);
 };
 

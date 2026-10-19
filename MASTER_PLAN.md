@@ -21,6 +21,7 @@ Hi-def sounds and music: 6-op FM, live math equations, multiline chord weaves.
 - [x] Harmonia Blocks library (`library/index.json`) with optional WAV/MP3
 - [x] WAV pitch/chord *sketch* (`analyze`) — not FM reverse-engineering
 - [x] Four more flagships (lute/31-EDO, neon organum, lambda choir, Buchla dusk)
+- [x] Studio chord builder: quality chips, long-press/right-click palette, progression chips, slash bass, length
 
 ## Decisions
 
