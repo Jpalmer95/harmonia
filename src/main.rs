@@ -32,12 +32,14 @@ fn main() {
         "render" => cmd_render(rest),
         "chord" | "chords" | "prog" => cmd_chord(rest),
         "math" | "eq" | "formula" => cmd_math(rest),
-        "inspect" | "analyze" => cmd_inspect(rest),
+        "inspect" => cmd_inspect(rest),
         "play" => cmd_play(rest),
         "export-presets" | "export" => cmd_export_presets(rest),
         "serve" | "studio" => cmd_serve(rest),
         "midi" => cmd_midi(rest),
         "dx7" => cmd_dx7(rest),
+        "analyze" | "transcribe" => cmd_analyze(rest),
+        "library" | "lib" | "blocks" => cmd_library(rest),
         other => Err(format!(
             "Unknown subcommand '{other}'. Run `harmonia --help` for usage."
         )),
@@ -108,6 +110,11 @@ SUBCOMMANDS:
   midi export <id> -o f.mid Write a Standard MIDI File of a composition's voice-led events
   midi render <file.mid>    Render an SMF through the FM engine
   dx7 <1-32>                Preview a Yamaha DX7 algorithm on the glass cathedral patch
+  analyze <path.wav>        Pitch/chord SKETCH from a recording (not FM reverse-engineering)
+  library list              List Harmonia Blocks (JSON-canonical library)
+  library save --id <id>    Promote a render/spec to the library (wav|mp3|json)
+  library mash <a> <b>      Interleave two block progressions into a new spec
+  library delete <id>       Remove a block and its optional audio
 "#
     );
 }
@@ -832,4 +839,176 @@ fn cmd_dx7(args: &[String]) -> Result<(), String> {
         .map_err(|e| format!("WAV write failed: {e}"))?;
     print_render_summary(&spec.title, &out, &stereo, BitDepth::Pcm24, t0.elapsed().as_secs_f64());
     Ok(())
+}
+
+fn cmd_analyze(args: &[String]) -> Result<(), String> {
+    if args.is_empty() {
+        return Err("Usage: harmonia analyze <path.wav> [--save] [--title Name]".into());
+    }
+    let path = Path::new(&args[0]);
+    let mut save = false;
+    let mut title = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "import".into());
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--save" {
+            save = true;
+            i += 1;
+        } else if args[i] == "--title" && i + 1 < args.len() {
+            title = args[i + 1].clone();
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    let buf = harmonia::wav::load_wav_file(path)?;
+    let report = harmonia::analyze::analyze_buffer(&buf);
+    println!("═══ HARMONIA ANALYZE (sketch, not a transcription) ═══");
+    println!("  File       : {}", path.display());
+    println!("  Duration   : {:.2}s @ {} Hz", report.duration_secs, report.sample_rate);
+    println!("  BPM est    : {:.1}", report.bpm_est);
+    println!("  Key guess  : {}", report.key_guess);
+    println!("  Confidence : {:.0}%", report.confidence * 100.0);
+    println!("  Progression: {}", report.progression);
+    if !report.hz_list.is_empty() {
+        println!(
+            "  Melody Hz  : {}",
+            report
+                .hz_list
+                .iter()
+                .map(|h| format!("{h:.1}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    println!("  Caveats:");
+    for c in &report.caveats {
+        println!("    • {c}");
+    }
+    if save {
+        let dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut block = harmonia::library::block_from_analyze(&title, &report);
+        let (wav_rel, _) =
+            harmonia::library::attach_audio(&dir, &block.id, &buf, "wav").unwrap_or((None, None));
+        block.wav_rel = wav_rel;
+        harmonia::library::add_block(&dir, block.clone())?;
+        println!("  Saved block {} → library/index.json", block.id);
+    }
+    Ok(())
+}
+
+fn cmd_library(args: &[String]) -> Result<(), String> {
+    let dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("list");
+    match sub {
+        "list" | "ls" => {
+            harmonia::library::prune_expired(&dir, false);
+            let blocks = harmonia::library::load_index(&dir);
+            if blocks.is_empty() {
+                println!("Library empty. Save a render with `harmonia library save` or analyze --save.");
+                return Ok(());
+            }
+            println!("═══ HARMONIA BLOCKS ═══");
+            for b in blocks {
+                println!(
+                    "  • {:<22} │ {:<28} │ {} │ {} BPM │ keep={}",
+                    b.id, b.title, b.kind, b.bpm, b.keep.as_str()
+                );
+                if !b.progression.is_empty() {
+                    println!("      {}", b.progression);
+                }
+            }
+            Ok(())
+        }
+        "delete" | "rm" => {
+            let id = args.get(1).ok_or("Usage: harmonia library delete <id>")?;
+            if harmonia::library::delete_block(&dir, id)? {
+                println!("Deleted {id}");
+            } else {
+                println!("No block named {id}");
+            }
+            Ok(())
+        }
+        "mash" | "mashup" => {
+            let a = args.get(1).ok_or("Usage: harmonia library mash <id_a> <id_b>")?;
+            let b = args.get(2).ok_or("Usage: harmonia library mash <id_a> <id_b>")?;
+            let ba = harmonia::library::get_block(&dir, a).ok_or_else(|| format!("missing {a}"))?;
+            let bb = harmonia::library::get_block(&dir, b).ok_or_else(|| format!("missing {b}"))?;
+            let prog = harmonia::library::mashup_progressions(&ba.progression, &bb.progression);
+            println!("Mashup progression:\n  {prog}");
+            println!("Render with:\n  harmonia chord \"{prog}\" --bpm {} --play", ba.bpm);
+            let mut block = ba.clone();
+            block.id = format!("mash_{}_{}", a, b);
+            block.title = format!("{} × {}", ba.title, bb.title);
+            block.kind = "mashup".into();
+            block.progression = prog;
+            block.created_unix = harmonia::library::now_unix();
+            harmonia::library::add_block(&dir, block)?;
+            Ok(())
+        }
+        "save" => {
+            let mut id = String::from("block");
+            let mut title = String::from("Saved block");
+            let mut fmt = "json";
+            let mut wav_path: Option<PathBuf> = None;
+            let mut progression = String::new();
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--id" if i + 1 < args.len() => {
+                        id = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--title" if i + 1 < args.len() => {
+                        title = args[i + 1].clone();
+                        i += 2;
+                    }
+                    "--format" | "--as" if i + 1 < args.len() => {
+                        fmt = args[i + 1].as_str();
+                        i += 2;
+                    }
+                    "--wav" if i + 1 < args.len() => {
+                        wav_path = Some(PathBuf::from(&args[i + 1]));
+                        i += 2;
+                    }
+                    "--progression" if i + 1 < args.len() => {
+                        progression = args[i + 1].clone();
+                        i += 2;
+                    }
+                    _ => i += 1,
+                }
+            }
+            let mut block = harmonia::library::HarmoniaBlock {
+                id: id.clone(),
+                title,
+                kind: "composition".into(),
+                created_unix: harmonia::library::now_unix(),
+                keep: harmonia::library::KeepPolicy::Library,
+                progression,
+                bpm: 110.0,
+                pattern: "cthulhu_cascade".into(),
+                tuning: "equal".into(),
+                patch_id: "retro_classical_brass".into(),
+                math_expr: String::new(),
+                notes: String::new(),
+                wav_rel: None,
+                mp3_rel: None,
+                analyze_json: None,
+            };
+            if let Some(p) = wav_path {
+                let buf = harmonia::wav::load_wav_file(&p)?;
+                let (w, m) = harmonia::library::attach_audio(&dir, &id, &buf, fmt)?;
+                block.wav_rel = w;
+                block.mp3_rel = m;
+            }
+            harmonia::library::add_block(&dir, block)?;
+            println!("Saved library/{id} (format {fmt})");
+            Ok(())
+        }
+        other => Err(format!(
+            "Unknown library subcommand '{other}' (list|save|mash|delete)"
+        )),
+    }
 }

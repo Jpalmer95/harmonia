@@ -192,6 +192,68 @@ pub fn builtin_compositions() -> Vec<CompositionSpec> {
                 p
             },
         },
+        // 7. Lute at the Edge of the Grid — Karplus + 31-EDO
+        CompositionSpec {
+            id: "lute_at_the_grid_edge".to_string(),
+            title: "Lute at the Edge of the Grid".to_string(),
+            subtitle: "Karplus–Strong lute + 31-EDO microtone cascade".to_string(),
+            description: "Plucked-string physical model (ks) driving a 31-tone equal temperament weave — Renaissance lute meeting a modern grid.".to_string(),
+            bpm: 96.0,
+            progression: "Am9 -> Dm9 -> G7 -> Cmaj9 -> Fmaj7#11 -> Bm7b5 -> E7b9 -> Amadd9".to_string(),
+            beats_per_chord: 4.0,
+            pattern: MultilinePattern::BachPrelude,
+            tuning: TuningSystem::from_str("edo31", 9),
+            patch: FmPatch::math_harmonic_weaver(
+                "env * (0.70 * ks(f, t, 0.48) + 0.30 * sin(w * 0.5))",
+            ),
+        },
+        // 8. Neon Organum — DX7 pairs + Werckmeister
+        CompositionSpec {
+            id: "neon_organum".to_string(),
+            title: "Neon Organum".to_string(),
+            subtitle: "DX7 three-pair algorithm on Werckmeister III well temperament".to_string(),
+            description: "Yamaha algorithm 5 (three modulator/carrier pairs) voiced through historical well temperament — baroque organ glow with neon chorus.".to_string(),
+            bpm: 84.0,
+            progression: "Dm -> Bbmaj7 -> Fmaj9 -> Csus4 -> Gm9 -> Ebmaj7 -> A7b9 -> Dm".to_string(),
+            beats_per_chord: 4.0,
+            pattern: MultilinePattern::SustainedCathedral,
+            tuning: TuningSystem::from_str("werckmeister_iii", 2),
+            patch: {
+                let mut p = FmPatch::glass_cathedral();
+                crate::dx7::apply_to_patch(&mut p, 5, 1.7);
+                p.reverb_mix = 0.44;
+                p.chorus_mix = 0.38;
+                p
+            },
+        },
+        // 9. Bohlen–Pierce Lambda Choir
+        CompositionSpec {
+            id: "lambda_tritave_choir".to_string(),
+            title: "Lambda Tritave Choir".to_string(),
+            subtitle: "Bohlen–Pierce 13-ED3 + harmonic-series pad".to_string(),
+            description: "Non-octave tritave harmony (period 3/1) sung by glass FM carriers — alien but consonant if you sit with it.".to_string(),
+            bpm: 72.0,
+            progression: "Cmaj9 -> Gsus4 -> Fmaj7 -> Dm9 -> Bbsus2 -> Cmaj9".to_string(),
+            beats_per_chord: 6.0,
+            pattern: MultilinePattern::SustainedCathedral,
+            tuning: TuningSystem::from_str("bp_lambda", 0),
+            patch: FmPatch::glass_cathedral(),
+        },
+        // 10. Buchla Fold at Dusk
+        CompositionSpec {
+            id: "buchla_fold_dusk".to_string(),
+            title: "Buchla Fold at Dusk".to_string(),
+            subtitle: "West-coast wavefolder lead over stranger-pulse bass".to_string(),
+            description: "Sine-folding Buchla timbre (math VM) blended with the 1984 pulse pattern — dusk-colored FM grit.".to_string(),
+            bpm: 104.0,
+            progression: "Em9 -> Cmaj9 -> Gmaj7 -> D9 -> Am11 -> B7alt".to_string(),
+            beats_per_chord: 4.0,
+            pattern: MultilinePattern::StrangerPulse,
+            tuning: TuningSystem::Equal12 { a4_hz: 440.0 },
+            patch: FmPatch::math_harmonic_weaver(
+                "env * (0.7 * fold(sin(w) + 0.35 * sin(w * 2.002), 1.5 + mod_idx * (0.6 + 0.4 * lfo1)) + 0.3 * sin(w * 0.5))",
+            ),
+        },
     ]
 }
 

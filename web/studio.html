@@ -47,6 +47,7 @@
   .key.black { background: #1a1406; color: var(--gold-2); height: 42px; margin: 0 -6px; z-index: 1; flex: .65; }
   footer { color: var(--muted); font-size: 12px; padding: 0 22px 24px; }
   .pane { display: none; } .pane.on { display: block; }
+  .tiny { width: auto; margin: 4px 4px 0 0; padding: 7px 10px; }
 </style>
 </head>
 <body>
@@ -56,6 +57,7 @@
 </header>
 <div class="tabs">
   <button class="tab on" data-tab="play">Playground</button>
+  <button class="tab" data-tab="library">Library / Blocks</button>
   <button class="tab" data-tab="learn">How it works</button>
   <button class="tab" data-tab="matrix">FM matrix / DX7</button>
 </div>
@@ -120,7 +122,28 @@
       <div><label>Shimmer</label><input id="shimmer" type="number" step="0.01" value="0.18" /></div>
     </div>
     <button class="primary" id="renderBtn">Render Hi-Def WAV</button>
+    <div class="row">
+      <button class="ghost tiny" id="saveWav">+ WAV</button>
+      <button class="ghost tiny" id="saveMp3">+ MP3</button>
+      <button class="ghost tiny" id="saveJson">+ JSON only</button>
+    </div>
+    <label>Unsaved render policy</label>
+    <select id="keepPolicy">
+      <option value="next_generation">Drop on next generate (lightest)</option>
+      <option value="ttl:86400">Expire in 24h</option>
+      <option value="library">Keep in library</option>
+    </select>
     <button class="ghost" id="jsonBtn">Show JSON spec</button>
+    </div>
+
+    <div class="pane" id="pane-library">
+    <h2>Harmonia Blocks</h2>
+    <p class="help">JSON is canonical (tiny). WAV/MP3 are optional. Import a recording for a <b>pitch/chord sketch</b> — not an FM equation dump.</p>
+    <label>Upload WAV to sketch</label>
+    <input type="file" id="uploadWav" accept="audio/wav,.wav" />
+    <div id="analyzeOut" class="help"></div>
+    <button class="ghost" id="refreshLib">Refresh library</button>
+    <div id="libList"></div>
     </div>
 
     <div class="pane" id="pane-learn">
@@ -256,6 +279,7 @@ function spec() {
 }
 
 $('jsonBtn').onclick = () => { $('jsonOut').textContent = JSON.stringify(spec(), null, 2); };
+let lastWavFile = null;
 $('renderBtn').onclick = async () => {
   $('status').textContent = 'Rendering 64-bit float DSP…';
   $('status').className = 'status';
@@ -263,6 +287,7 @@ $('renderBtn').onclick = async () => {
     const r = await fetch('/api/render', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(spec()) });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || 'render failed');
+    lastWavFile = (data.wav_url || '').split('/').pop();
     $('status').className = 'status ok';
     $('status').textContent = `OK  ${data.duration_secs.toFixed(2)}s  peak ${data.peak_dbfs.toFixed(2)} dBFS  ${data.render_ms.toFixed(0)} ms`;
     $('trace').textContent = data.ascii_envelope || '';
@@ -274,8 +299,65 @@ $('renderBtn').onclick = async () => {
   }
 };
 
+async function saveBlock(format) {
+  const s = spec();
+  const body = {
+    action: 'save',
+    id: s.id || ('block_' + Date.now()),
+    title: s.title,
+    progression: s.progression,
+    bpm: s.bpm,
+    pattern: s.pattern,
+    tuning: s.tuning,
+    math_expr: s.math_expr,
+    format,
+    keep: $('keepPolicy').value,
+    wav_file: lastWavFile
+  };
+  const r = await fetch('/api/library', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await r.json();
+  $('status').textContent = data.ok === false ? (data.error || 'save failed') : 'Saved to library as ' + format;
+  loadLibrary();
+}
+$('saveWav').onclick = () => saveBlock('wav');
+$('saveMp3').onclick = () => saveBlock('mp3');
+$('saveJson').onclick = () => saveBlock('json');
+
+async function loadLibrary() {
+  const r = await fetch('/api/library');
+  const data = await r.json();
+  const blocks = data.blocks || [];
+  $('libList').innerHTML = blocks.map(b =>
+    `<button class="preset" data-block="${b.id}"><b>${b.title}</b><small>${b.id} · ${b.kind} · ${b.keep} · ${b.progression || '(no chords)'}</small></button>`
+  ).join('') || '<p class="help">Empty. Render something, then + JSON / + WAV.</p>';
+  document.querySelectorAll('[data-block]').forEach(btn => btn.onclick = () => {
+    const b = blocks.find(x => x.id === btn.dataset.block);
+    if (!b) return;
+    $('id').value = b.id; $('title').value = b.title;
+    if (b.progression) $('progression').value = b.progression;
+    if (b.pattern) $('pattern').value = b.pattern;
+    if (b.bpm) $('bpm').value = b.bpm;
+    if (b.math_expr) { $('math').value = b.math_expr; $('math_mix').value = '0.7'; }
+  });
+}
+$('refreshLib').onclick = loadLibrary;
+
+$('uploadWav').onchange = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  $('analyzeOut').textContent = 'Analyzing (sketch)…';
+  const buf = await file.arrayBuffer();
+  const r = await fetch('/api/analyze', { method:'POST', body: buf });
+  const data = await r.json();
+  if (data.ok === false) { $('analyzeOut').textContent = data.error; return; }
+  $('analyzeOut').innerHTML = `<b>Sketch</b> ~${(data.confidence*100||0).toFixed(0)}% · BPM ${data.bpm_est||'?'} · ${data.key_guess||''}<br>Progression: <code>${data.progression||'(none)'}</code><br><small>${(data.caveats||[]).join(' ')}</small>`;
+  if (data.progression) $('progression').value = data.progression;
+  if (data.bpm_est) $('bpm').value = Math.round(data.bpm_est);
+};
+
 drawMatrix();
 loadPresets().catch(e => { $('status').className = 'status err'; $('status').textContent = e; });
+loadLibrary().catch(()=>{});
 </script>
 </body>
 </html>

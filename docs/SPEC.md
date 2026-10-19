@@ -101,8 +101,23 @@ Stereo, 22.05–192 kHz. Bit depths: 16 PCM, 24 PCM, 32-bit IEEE float. Master c
 - `GET /api/presets` compositions + math formulas
 - `POST /api/render` JSON body = CompositionSpec overrides → `{ok, wav_url, peak_dbfs, ascii_envelope, …}`
 - `GET /renders/<file>.wav`
+- `GET /api/library` Harmonia Blocks index
+- `POST /api/library` `{action: save|delete|mash, …}` — JSON always; `format: wav|mp3|json` attaches optional audio
+- `POST /api/analyze` raw WAV bytes → pitch/chord **sketch** (not a transcription)
 
-## 10. Extension traits
+## 10. Harmonia Blocks & analyze bounds
+
+Canonical store: `library/index.json`. WAV/MP3 under `library/audio/` are optional. Keep policies: `library` (until deleted), `ttl:<secs>`, `next_generation`.
+
+**`harmonia analyze` can:** estimate a melody pitch contour (YIN), a 12-class chroma chord sketch (`maj`/`m`/`7`/`m7`), a rough BPM, and seed a Block progression.
+
+**It cannot:** recover an FM operator graph, a math formula, DX7 algorithm, isolated stems, vocals, or a DAW-accurate score. Treat output as a starting point to tweak.
+
+Mashup: `harmonia library mash <id_a> <id_b>` interleaves two progressions (JSON fusion, not audio stem mix).
+
+Song-extend (Suno / MusicGen / etc.) is **out of process**. Prefer a local OSS model as BYOC sidecar later; do not call paid cloud APIs from this engine.
+
+## 11. Extension traits
 
 ```rust
 pub trait CustomSignalGenerator: Send + Sync {

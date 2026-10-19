@@ -9,11 +9,13 @@
 //! - [`CustomAudioEffect`] for custom DSP post-processors
 //! - [`math_engine::CompiledExpr`] for arbitrary mathematical equations at sample rate
 
+pub mod analyze;
 pub mod dx7;
 pub mod effects;
 pub mod fm_synth;
 pub mod json;
 pub mod karplus;
+pub mod library;
 pub mod math_engine;
 pub mod midi;
 pub mod oscillator;
@@ -157,5 +159,55 @@ mod tests {
         assert_eq!(a32.carriers.len(), 6);
         let y = crate::karplus::ks_waveform(220.0, 0.02, 0.4);
         assert!(y.is_finite());
+    }
+
+    #[test]
+    fn test_analyze_sine_is_near_a4() {
+        use crate::analyze::analyze_buffer;
+        use crate::wav::StereoBuffer;
+        let sr = 22050u32;
+        let n = sr as usize; // 1 second
+        let mut buf = StereoBuffer::new(sr, n);
+        let w = 2.0 * std::f64::consts::PI * 440.0 / sr as f64;
+        for i in 0..n {
+            let s = (w * i as f64).sin() * 0.4;
+            buf.left[i] = s;
+            buf.right[i] = s;
+        }
+        let report = analyze_buffer(&buf);
+        assert!(report.duration_secs > 0.9);
+        assert!(
+            report.melody_notes.iter().any(|p| (p.hz - 440.0).abs() < 12.0),
+            "expected ~A4 in melody, got {:?}",
+            report.melody_notes.iter().map(|p| p.hz).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_library_mashup_and_index_roundtrip() {
+        use crate::library::{mashup_progressions, HarmoniaBlock, KeepPolicy};
+        let mash = mashup_progressions("Cm9 -> G7", "Am9 -> Fmaj7");
+        assert!(mash.contains("Cm9"));
+        assert!(mash.contains("Am9"));
+        let b = HarmoniaBlock {
+            id: "t1".into(),
+            title: "t".into(),
+            kind: "composition".into(),
+            created_unix: 1,
+            keep: KeepPolicy::Library,
+            progression: mash,
+            bpm: 100.0,
+            pattern: "cthulhu_cascade".into(),
+            tuning: "equal".into(),
+            patch_id: "retro_classical_brass".into(),
+            math_expr: String::new(),
+            notes: String::new(),
+            wav_rel: None,
+            mp3_rel: None,
+            analyze_json: None,
+        };
+        let json = b.to_json_obj();
+        assert!(json.contains("\"id\": \"t1\""));
+        assert_eq!(crate::presets::builtin_compositions().len(), 10);
     }
 }

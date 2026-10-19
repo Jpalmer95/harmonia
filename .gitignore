@@ -1,5 +1,5 @@
 /target
-/renders/*.wav
+/renders/
+/library/
 *.rs.bk
 .DS_Store
-/renders/

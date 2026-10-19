@@ -2,10 +2,15 @@
 //! Zero external dependencies — uses `std::net::TcpListener` to serve the interactive Web Studio
 //! and REST API (`/api/presets`, `/api/render`, `/renders/<file>.wav`).
 
+use crate::analyze::analyze_buffer;
 use crate::json::{escape_json, parse_json};
+use crate::library::{
+    add_block, attach_audio, delete_block, get_block, index_json, mashup_progressions, prune_expired,
+    HarmoniaBlock, KeepPolicy,
+};
 use crate::math_engine::builtin_math_formulas;
 use crate::presets::{builtin_compositions, CompositionSpec};
-use crate::wav::BitDepth;
+use crate::wav::{load_wav_bytes, load_wav_file, BitDepth};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -21,9 +26,9 @@ pub fn run_studio_server(port: u16, project_dir: PathBuf) -> Result<(), String> 
     println!("║  HARMONIA HI-DEF FM & MATHEMATICAL MUSIC STUDIO SERVER               ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     println!("║  Local Studio UI : http://127.0.0.1:{:<5}                            ║", port);
-    println!("║  API Endpoints   : GET  /api/presets                                 ║");
-    println!("║                    POST /api/render                                  ║");
-    println!("║                    GET  /renders/<name>.wav                          ║");
+    println!("║  API Endpoints   : GET  /api/presets  GET /api/library               ║");
+    println!("║                    POST /api/render   POST /api/analyze              ║");
+    println!("║                    POST /api/library  GET  /renders|/library/...     ║");
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 
     for stream in listener.incoming() {
@@ -36,16 +41,61 @@ pub fn run_studio_server(port: u16, project_dir: PathBuf) -> Result<(), String> 
 }
 
 fn handle_client(stream: &mut TcpStream, project_dir: &PathBuf) -> Result<(), String> {
-    let mut buf = vec![0u8; 65536];
-    let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-    if n == 0 {
+    let mut header_buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    loop {
+        let n = stream.read(&mut tmp).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        header_buf.extend_from_slice(&tmp[..n]);
+        if header_buf.windows(4).any(|w| w == b"\r\n\r\n") || header_buf.len() > 1024 * 1024 {
+            break;
+        }
+    }
+    if header_buf.is_empty() {
         return Ok(());
     }
-    let req_str = String::from_utf8_lossy(&buf[..n]);
-    let first_line = req_str.lines().next().unwrap_or("");
+    let header_end = header_buf
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 4)
+        .unwrap_or(header_buf.len());
+    let header_str = String::from_utf8_lossy(&header_buf[..header_end.min(header_buf.len())]);
+    let first_line = header_str.lines().next().unwrap_or("");
     let mut parts = first_line.split_whitespace();
-    let method = parts.next().unwrap_or("GET");
-    let path = parts.next().unwrap_or("/");
+    let method = parts.next().unwrap_or("GET").to_string();
+    let path = parts.next().unwrap_or("/").to_string();
+    let content_length: usize = header_str
+        .lines()
+        .find_map(|l| {
+            let l = l.to_ascii_lowercase();
+            l.strip_prefix("content-length:")
+                .and_then(|v| v.trim().parse().ok())
+        })
+        .unwrap_or(0)
+        .min(32 * 1024 * 1024);
+    let mut body = header_buf[header_end.min(header_buf.len())..].to_vec();
+    while body.len() < content_length {
+        let n = stream.read(&mut tmp).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&tmp[..n]);
+    }
+    if body.len() > content_length {
+        body.truncate(content_length);
+    }
+    dispatch(stream, project_dir, &method, &path, &body)
+}
+
+fn dispatch(
+    stream: &mut TcpStream,
+    project_dir: &PathBuf,
+    method: &str,
+    path: &str,
+    body: &[u8],
+) -> Result<(), String> {
 
     if method == "OPTIONS" {
         return send_response(stream, "200 OK", "text/plain", b"");
@@ -107,14 +157,169 @@ fn handle_client(stream: &mut TcpStream, project_dir: &PathBuf) -> Result<(), St
         }
     }
 
-    if method == "POST" && path == "/api/render" {
-        let body = req_str
-            .split("\r\n\r\n")
-            .nth(1)
-            .or_else(|| req_str.split("\n\n").nth(1))
-            .unwrap_or("{}");
+    if method == "GET" && path.starts_with("/library/") {
+        let rel = path.trim_start_matches('/');
+        if rel.contains("..") {
+            return send_response(stream, "400 Bad Request", "text/plain", b"Invalid path");
+        }
+        let file_path = project_dir.join(rel);
+        if let Ok(bytes) = fs::read(&file_path) {
+            let ctype = if rel.ends_with(".mp3") {
+                "audio/mpeg"
+            } else {
+                "audio/wav"
+            };
+            return send_response(stream, "200 OK", ctype, &bytes);
+        }
+        return send_response(stream, "404 Not Found", "text/plain", b"Not found");
+    }
 
-        let parsed = match parse_json(body) {
+    if method == "GET" && path == "/api/library" {
+        prune_expired(project_dir, false);
+        let json = index_json(project_dir);
+        return send_response(stream, "200 OK", "application/json; charset=utf-8", json.as_bytes());
+    }
+
+    if method == "POST" && path == "/api/analyze" {
+        let wav = match load_wav_bytes(body) {
+            Ok(w) => w,
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        let report = analyze_buffer(&wav);
+        let inner = report.to_json();
+        let inner = inner.trim();
+        let inner = inner.strip_prefix('{').unwrap_or(inner);
+        let inner = inner.strip_suffix('}').unwrap_or(inner).trim();
+        let resp = format!("{{\n  \"ok\": true,\n  {inner}\n}}");
+        return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+    }
+
+    if method == "POST" && path == "/api/library" {
+        let text = String::from_utf8_lossy(body);
+        let parsed = match parse_json(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        let action = parsed.get("action").and_then(|v| v.as_str()).unwrap_or("save");
+        match action {
+            "delete" => {
+                let id = parsed.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let _ = delete_block(project_dir, id);
+                let json = index_json(project_dir);
+                return send_response(stream, "200 OK", "application/json", json.as_bytes());
+            }
+            "mash" => {
+                let a = parsed.get("a").and_then(|v| v.as_str()).unwrap_or("");
+                let b = parsed.get("b").and_then(|v| v.as_str()).unwrap_or("");
+                let ba = get_block(project_dir, a);
+                let bb = get_block(project_dir, b);
+                if let (Some(ba), Some(bb)) = (ba, bb) {
+                    let prog = mashup_progressions(&ba.progression, &bb.progression);
+                    let mut block = ba.clone();
+                    block.id = format!("mash_{a}_{b}");
+                    block.title = format!("{} × {}", ba.title, bb.title);
+                    block.kind = "mashup".into();
+                    block.progression = prog.clone();
+                    let _ = add_block(project_dir, block);
+                    let resp = format!(
+                        "{{\"ok\":true,\"progression\":\"{}\",\"id\":\"mash_{}_{}\"}}",
+                        escape_json(&prog),
+                        escape_json(a),
+                        escape_json(b)
+                    );
+                    return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+                }
+                return send_response(
+                    stream,
+                    "404 Not Found",
+                    "application/json",
+                    b"{\"ok\":false,\"error\":\"missing block\"}",
+                );
+            }
+            _ => {
+                prune_expired(project_dir, parsed.get("next_generation").and_then(|v| v.as_bool()).unwrap_or(false));
+                let id = parsed
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("block")
+                    .to_string();
+                let format = parsed.get("format").and_then(|v| v.as_str()).unwrap_or("json");
+                let keep = KeepPolicy::from_str(
+                    parsed.get("keep").and_then(|v| v.as_str()).unwrap_or("library"),
+                );
+                let mut block = HarmoniaBlock {
+                    id: id.clone(),
+                    title: parsed
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Saved")
+                        .to_string(),
+                    kind: parsed
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("composition")
+                        .to_string(),
+                    created_unix: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                    keep,
+                    progression: parsed
+                        .get("progression")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    bpm: parsed.get("bpm").and_then(|v| v.as_f64()).unwrap_or(110.0),
+                    pattern: parsed
+                        .get("pattern")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("cthulhu_cascade")
+                        .to_string(),
+                    tuning: parsed
+                        .get("tuning")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("equal")
+                        .to_string(),
+                    patch_id: parsed
+                        .get("patch_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("retro_classical_brass")
+                        .to_string(),
+                    math_expr: parsed
+                        .get("math_expr")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    notes: String::new(),
+                    wav_rel: None,
+                    mp3_rel: None,
+                    analyze_json: None,
+                };
+                if let Some(wav_name) = parsed.get("wav_file").and_then(|v| v.as_str()) {
+                    let p = project_dir.join("renders").join(wav_name);
+                    if let Ok(buf) = load_wav_file(&p) {
+                        if let Ok((w, m)) = attach_audio(project_dir, &id, &buf, format) {
+                            block.wav_rel = w;
+                            block.mp3_rel = m;
+                        }
+                    }
+                }
+                let _ = add_block(project_dir, block);
+                let json = index_json(project_dir);
+                return send_response(stream, "200 OK", "application/json", json.as_bytes());
+            }
+        }
+    }
+
+    if method == "POST" && path == "/api/render" {
+        let body_str = String::from_utf8_lossy(body);
+        let parsed = match parse_json(&body_str) {
             Ok(v) => v,
             Err(e) => {
                 let err_json = format!("{{\"ok\": false, \"error\": \"{}\"}}", escape_json(&e));

@@ -1,7 +1,7 @@
 //! High-Definition WAV encoder, reader, and signal analyzer in pure Rust.
 //! Supports 16-bit PCM, 24-bit Studio PCM, and 32-bit IEEE Float formats at any sample rate (44.1kHz..192kHz).
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 
@@ -398,6 +398,81 @@ pub fn inspect_wav_file<P: AsRef<Path>>(path: P) -> Result<(String, AudioReport)
         channels
     );
     Ok((fmt_desc, stereo.analyze()))
+}
+
+/// Decode a WAV file into a stereo buffer (mono is duplicated).
+pub fn load_wav_file<P: AsRef<Path>>(path: P) -> Result<StereoBuffer, String> {
+    load_wav_bytes(&fs::read(path.as_ref()).map_err(|e| format!("Failed to read WAV: {e}"))?)
+}
+
+/// Decode WAV bytes into a stereo buffer.
+pub fn load_wav_bytes(bytes: &[u8]) -> Result<StereoBuffer, String> {
+    if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("Not a valid RIFF/WAVE file".to_string());
+    }
+
+    let mut pos = 12usize;
+    let mut format_tag = 1u16;
+    let mut channels = 2u16;
+    let mut sample_rate = 48000u32;
+    let mut bits_per_sample = 16u16;
+    let mut data_slice: &[u8] = &[];
+
+    while pos + 8 <= bytes.len() {
+        let chunk_id = &bytes[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        pos += 8;
+        let end = (pos + chunk_size).min(bytes.len());
+        if chunk_id == b"fmt " && chunk_size >= 16 {
+            format_tag = u16::from_le_bytes([bytes[pos], bytes[pos + 1]]);
+            channels = u16::from_le_bytes([bytes[pos + 2], bytes[pos + 3]]);
+            sample_rate = u32::from_le_bytes([
+                bytes[pos + 4],
+                bytes[pos + 5],
+                bytes[pos + 6],
+                bytes[pos + 7],
+            ]);
+            bits_per_sample = u16::from_le_bytes([bytes[pos + 14], bytes[pos + 15]]);
+        } else if chunk_id == b"data" {
+            data_slice = &bytes[pos..end];
+            break;
+        }
+        pos = end + (chunk_size & 1);
+    }
+
+    let bytes_per_sample = (bits_per_sample / 8).max(1) as usize;
+    let frame_bytes = bytes_per_sample * (channels.max(1) as usize);
+    if frame_bytes == 0 {
+        return Err("Invalid WAV frame size".into());
+    }
+    let num_frames = data_slice.len() / frame_bytes;
+    let mut stereo = StereoBuffer::new(sample_rate, num_frames);
+
+    for i in 0..num_frames {
+        let base = i * frame_bytes;
+        let l = decode_sample(
+            &data_slice[base..base + bytes_per_sample],
+            format_tag,
+            bits_per_sample,
+        );
+        let r = if channels >= 2 {
+            decode_sample(
+                &data_slice[base + bytes_per_sample..base + 2 * bytes_per_sample],
+                format_tag,
+                bits_per_sample,
+            )
+        } else {
+            l
+        };
+        stereo.left[i] = l;
+        stereo.right[i] = r;
+    }
+    Ok(stereo)
 }
 
 fn decode_sample(raw: &[u8], format_tag: u16, bits: u16) -> f64 {
