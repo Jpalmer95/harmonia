@@ -58,8 +58,9 @@
   }
   .qchip.on, .pchip.on { border-color: var(--gold); color: var(--gold-2); background: #241e12; }
   .pchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; min-height: 28px; }
-  .pchip { position: relative; padding-right: 22px; }
+  .pchip { position: relative; padding-right: 42px; }
   .pchip .x { position: absolute; right: 6px; top: 3px; color: var(--rose); font-size: 10px; }
+  .pchip .hear { position: absolute; right: 20px; top: 1px; }
   .palette {
     position: absolute; z-index: 20; background: var(--panel); border: 1px solid var(--gold);
     border-radius: 10px; padding: 8px; width: 280px; box-shadow: 0 12px 40px #000a;
@@ -82,7 +83,11 @@
   .block .acts a.ghost { width: auto; margin: 0; padding: 7px 10px; font-size: 10px; letter-spacing: .04em; text-decoration: none; display: inline-block; }
   .tel-actions { margin-top: 10px; }
   .tel-actions .primary { margin-top: 8px; }
-  #pane-library .block { cursor: default; }
+  .hear { width: auto; margin: 0 0 0 6px; padding: 2px 7px; font-size: 11px; letter-spacing: 0; text-transform: none; border: 0; background: transparent; color: var(--cyan); }
+  .hear:hover { color: var(--gold-2); }
+  .preview-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .preview-bar audio { width: 180px; margin: 0; height: 32px; }
+  .preview-bar .hint { margin: 0; }
 </style>
 </head>
 <body>
@@ -112,7 +117,19 @@
     <label>Chord progression</label>
     <div class="pchips" id="pchips"></div>
     <textarea id="progression">Cm9 -&gt; Abmaj9#11 -&gt; Fm11 -&gt; G7b9</textarea>
-    <p class="hint">Click a quality, then a key. Hold or right-click a key for more (maj9#11, 7alt, slash bass…). Click a chip to replace it, × to remove. Undo pops the last chord.</p>
+    <p class="hint">Click a quality, then a key. Hold or right-click a key for more (maj9#11, 7alt, slash bass…). Click a chip to replace it, × to remove. The speaker on a chip (or Hear while building) plays that chord only — not the full piece.</p>
+    <div class="preview-bar">
+      <label style="margin:0;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink);">
+        <input type="checkbox" id="hearOnBuild" checked style="width:auto" />
+        Hear while building
+      </label>
+      <select id="hearMode" style="width:auto">
+        <option value="chord">Chord (current quality)</option>
+        <option value="note">Single note</option>
+      </select>
+      <audio id="previewPlayer" controls></audio>
+      <span class="hint" id="previewHint">Audition is ~1s through the current patch. Full Render is still the piece.</span>
+    </div>
     <label>Chord quality</label>
     <div class="qualities" id="qualities"></div>
     <div class="row">
@@ -230,7 +247,7 @@
     <h2>How to tinker</h2>
     <div class="help">
       <p><b>1. Hear something immediately.</b> Click a flagship on the left, then Render. <code>bach_meets_vangelis</code> is the morphing FM brass weave.</p>
-      <p><b>2. Change the music, not the engine.</b> Pick a quality chip, then a piano key. Hold or right-click a key for more (maj9#11, 7alt, slash bass). Click a progression chip to replace it. Or type: <code>Cm9 -&gt; Abmaj9#11</code>, slash bass <code>Cmaj9/E</code>, length <code>Cm9*8</code>, raw Hz <code>[220, 275, 330]</code>.</p>
+      <p><b>2. Change the music, not the engine.</b> Pick a quality chip, then a piano key. Hold or right-click a key for more (maj9#11, 7alt, slash bass). Click a progression chip to replace it. <b>Hear while building</b> (on by default) plays that chord or note through the current patch — ~1 second, not a full render. Speaker on a chip re-auditions it. Or type: <code>Cm9 -&gt; Abmaj9#11</code>, slash bass <code>Cmaj9/E</code>, length <code>Cm9*8</code>, raw Hz <code>[220, 275, 330]</code>.</p>
       <p><b>3. Swap the weave.</b> Cthulhu = arpeggio + pad. Bach = 16ths. Cathedral = pads. Stranger = 80s pulse. 3v4 = Glass. Counterpoint = four gliding voices.</p>
       <p><b>4. Type physics.</b> Variables: <code>t f w env mod_idx lfo1 phi</code>. Functions: <code>fm(fc,fm,idx,t) fm3(...) cheb(n,x) harm(w,n,r) bell(...) ks(f,t,damp)</code>.</p>
       <p><b>5. Microtone.</b> Just Intonation locks 5:4 / 3:2. <code>edo31</code> is 31 equal steps. Werckmeister is historical keyboard temperament.</p>
@@ -325,6 +342,38 @@ function joinProg(parts) { return parts.join(' -> '); }
 function tokenFor(root, q) {
   return root + q + ($('slash').value || '') + ($('clen').value || '');
 }
+let previewUrl = null;
+let previewBusy = false;
+async function previewToken(token, seconds) {
+  token = (token || '').trim();
+  if (!token) return;
+  if (previewBusy) return;
+  previewBusy = true;
+  $('previewHint').textContent = 'Hearing ' + token + '…';
+  try {
+    const body = Object.assign(spec(), { token, seconds: seconds || 1.15 });
+    const r = await fetch('/api/preview', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const ctype = r.headers.get('content-type') || '';
+    if (!r.ok || ctype.indexOf('audio') < 0) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || 'preview failed');
+    }
+    const blob = await r.blob();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(blob);
+    const p = $('previewPlayer');
+    p.src = previewUrl;
+    p.play().catch(()=>{});
+    $('previewHint').textContent = token + ' · ~1s pad through current patch';
+  } catch (e) {
+    $('previewHint').textContent = String(e);
+  } finally {
+    previewBusy = false;
+  }
+}
+function hearIfOn(token) {
+  if ($('hearOnBuild').checked) previewToken(token, 1.05);
+}
 function setProg(parts) {
   $('progression').value = joinProg(parts);
   renderChips();
@@ -332,10 +381,15 @@ function setProg(parts) {
 function renderChips() {
   const parts = splitProg($('progression').value);
   $('pchips').innerHTML = parts.map((p,i) =>
-    `<button type="button" class="pchip${i===editIndex?' on':''}" data-i="${i}">${p}<span class="x" data-x="${i}">×</span></button>`
+    `<button type="button" class="pchip${i===editIndex?' on':''}" data-i="${i}">${p}<span class="hear" data-hear="${p}" title="Hear this chord">♪</span><span class="x" data-x="${i}">×</span></button>`
   ).join('');
   $('pchips').querySelectorAll('.pchip').forEach(b => {
     b.onclick = (e) => {
+      if (e.target.dataset.hear != null) {
+        e.stopPropagation();
+        previewToken(e.target.dataset.hear, 1.2);
+        return;
+      }
       if (e.target.dataset.x != null) {
         const parts = splitProg($('progression').value);
         parts.splice(+e.target.dataset.x, 1);
@@ -359,6 +413,7 @@ function commitChord(token) {
     parts.push(token);
   }
   setProg(parts);
+  hearIfOn(token);
 }
 
 function hidePalette() { $('palette').hidden = true; }
@@ -381,7 +436,20 @@ $('keys').innerHTML = NOTES.map(([n,blk]) => `<button type="button" class="key $
 let skipClick = false;
 $('keys').querySelectorAll('.key').forEach(b => {
   let hold;
-  b.onclick = () => { if (skipClick) { skipClick = false; return; } commitChord(tokenFor(b.dataset.n, quality)); };
+  b.onclick = () => {
+    if (skipClick) { skipClick = false; return; }
+    if ($('hearMode').value === 'note') {
+      // Audition the pure root; still add the selected quality to the progression.
+      if ($('hearOnBuild').checked) previewToken(b.dataset.n, 0.7);
+      const parts = splitProg($('progression').value);
+      const token = tokenFor(b.dataset.n, quality);
+      if (editIndex >= 0 && editIndex < parts.length) { parts[editIndex] = token; editIndex = -1; }
+      else parts.push(token);
+      setProg(parts);
+      return;
+    }
+    commitChord(tokenFor(b.dataset.n, quality));
+  };
   b.oncontextmenu = (e) => {
     e.preventDefault();
     const r = $('keys').getBoundingClientRect();

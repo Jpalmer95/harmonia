@@ -28,7 +28,8 @@ pub fn run_studio_server(port: u16, project_dir: PathBuf) -> Result<(), String> 
     println!("║  Local Studio UI : http://127.0.0.1:{:<5}                            ║", port);
     println!("║  API Endpoints   : GET  /api/presets  GET /api/library               ║");
     println!("║                    POST /api/render   POST /api/analyze              ║");
-    println!("║                    POST /api/library  GET  /renders|/library/...     ║");
+    println!("║                    POST /api/library  POST /api/preview              ║");
+    println!("║                    GET  /renders|/library/...                        ║");
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 
     for stream in listener.incoming() {
@@ -409,6 +410,58 @@ fn dispatch(
             Err(e) => {
                 let resp = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
                 return send_response(stream, "200 OK", "application/json", resp.as_bytes());
+            }
+        }
+    }
+
+    if method == "POST" && path == "/api/preview" {
+        let text = String::from_utf8_lossy(body);
+        let parsed = match parse_json(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        let token = parsed
+            .get("token")
+            .and_then(|v| v.as_str())
+            .or_else(|| parsed.get("chord").and_then(|v| v.as_str()))
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if token.is_empty() {
+            return send_response(
+                stream,
+                "400 Bad Request",
+                "application/json",
+                b"{\"ok\":false,\"error\":\"token is required (e.g. Cm9 or C)\"}",
+            );
+        }
+        let seconds = parsed
+            .get("seconds")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1.15)
+            .clamp(0.35, 2.4);
+        let spec = match CompositionSpec::from_json_val(&parsed) {
+            Ok(mut s) => {
+                s.progression = token.clone();
+                s.beats_per_chord = (seconds * s.bpm / 60.0).max(0.5);
+                s
+            }
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
+            }
+        };
+        match spec.preview_token(&token, seconds) {
+            Ok(buf) => {
+                let bytes = buf.to_wav_bytes(BitDepth::Pcm16);
+                return send_response(stream, "200 OK", "audio/wav", &bytes);
+            }
+            Err(e) => {
+                let err = format!("{{\"ok\":false,\"error\":\"{}\"}}", escape_json(&e));
+                return send_response(stream, "400 Bad Request", "application/json", err.as_bytes());
             }
         }
     }

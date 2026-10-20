@@ -66,6 +66,57 @@ impl CompositionSpec {
         buf.dither_amp = self.patch.dither_amp;
         Ok(buf)
     }
+
+    /// Short audition of one token (chord or single note) so the studio can hear
+    /// a voicing before a full progression render. Uses a held pad, light master
+    /// chain, 24 kHz, ~1.2 s — not a flagship render.
+    pub fn preview_token(&self, token: &str, seconds: f64) -> Result<StereoBuffer, String> {
+        let token = token.trim();
+        if token.is_empty() {
+            return Err("empty preview token".into());
+        }
+        let beats = (seconds * self.bpm / 60.0).max(0.5);
+        let chords = match crate::theory::parse_single_chord(token, beats) {
+            Some(c) => vec![c],
+            None => return Err(format!("could not parse chord `{token}`")),
+        };
+        let (events, seq_dur_sec) = generate_multiline_events(
+            &chords,
+            self.bpm,
+            MultilinePattern::SustainedCathedral,
+            self.tuning.clone(),
+        );
+        let compiled_math = if let Some(ref expr_str) = self.patch.math_expr {
+            if !expr_str.trim().is_empty() && self.patch.math_mix > 0.001 {
+                Some(CompiledExpr::compile(expr_str)?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let sr = 24000u32;
+        let total_secs = (seq_dur_sec + 0.18).clamp(0.4, 2.4);
+        let total_frames = (total_secs * sr as f64).ceil() as usize;
+        let mut buf = StereoBuffer::new(sr, total_frames);
+        for ev in &events {
+            let start_frame = (ev.start_sec * sr as f64).round() as usize;
+            self.patch.render_note_into(
+                &mut buf.left,
+                &mut buf.right,
+                sr,
+                start_frame,
+                ev.duration_sec.min(total_secs),
+                ev.start_freq_hz,
+                ev.target_freq_hz,
+                ev.velocity,
+                ev.voice_line,
+                compiled_math.as_ref(),
+            );
+        }
+        process_master_chain(&mut buf, &self.patch);
+        Ok(buf)
+    }
 }
 
 pub fn builtin_patches() -> Vec<FmPatch> {

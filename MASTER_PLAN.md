@@ -24,6 +24,7 @@ Hi-def sounds and music: 6-op FM, live math equations, multiline chord weaves.
 - [x] Studio chord builder: quality chips, long-press/right-click palette, progression chips, slash bass, length
 - [x] Visible library-save feedback (toast + tab switch); formula lint; patch picker; MIDI export; spec undo; limiter/normalize/dither; analyze chip confidence
 - [x] Library cards are interactive (play / edit in playground / download / delete); save-this-WAV lives under the telemetry player
+- [x] Hear-while-building: `/api/preview` ~1s pad of one chord/note; chip ♪; does not replace full Render
 
 ## Decisions
 

@@ -123,6 +123,18 @@ mod tests {
         let wav_bytes = stereo.to_wav_bytes(BitDepth::Pcm24);
         assert_eq!(&wav_bytes[0..4], b"RIFF");
         assert_eq!(&wav_bytes[8..12], b"WAVE");
+
+        let preview = restored
+            .preview_token("Cm9", 0.6)
+            .expect("preview of a single chord should succeed");
+        assert!(preview.duration_secs() > 0.3);
+        assert!(preview.duration_secs() < 2.5);
+        let pbytes = preview.to_wav_bytes(BitDepth::Pcm16);
+        assert_eq!(&pbytes[0..4], b"RIFF");
+        let note_only = restored
+            .preview_token("C", 0.5)
+            .expect("preview of a single note should succeed");
+        assert!(note_only.left.iter().any(|s| s.abs() > 1e-4));
     }
 
     #[test]
