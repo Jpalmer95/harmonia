@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Jonathan Korstad", "Hermes Agent"]
 description = "Hi-Def 6-Operator FM Matrix Synthesizer, Symbolic Mathematical DSP Engine, and Multiline Chord Progression Workstation in Pure Rust"
-license = "MIT"
+license = "Apache-2.0"
 
 [lib]
 name = "harmonia"

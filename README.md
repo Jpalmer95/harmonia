@@ -87,4 +87,4 @@ Hermes skill: `harmonia-music`.
 
 ## License
 
-MIT. DX7 algorithm graphs are public routing tables (not ROM samples). Scala format is the Huygens-Fokker open spec. Karplus–Strong is a public-domain algorithm.
+Apache License 2.0. Copyright 2026 Jonathan Korstad. DX7 algorithm graphs are public routing tables (not ROM samples). Scala format is the Huygens-Fokker open spec. Karplus–Strong is a public-domain algorithm.

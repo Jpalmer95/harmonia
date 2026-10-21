@@ -8,6 +8,7 @@ Hi-def 6-operator FM matrix synth, symbolic math DSP, and multiline chord workst
 - JSON under `presets/` is the database. WAV under `renders/` is **derived** — never commit large WAVs.
 - Never add audio crates unless a measured bottleneck exists (house style: stdlib-only DSP).
 - Hermes skill: `harmonia-music` — load it before composing or rendering.
+- License: Apache-2.0 (`LICENSE`, `Cargo.toml`). Do not revert to MIT.
 
 ## Do / don't
 
