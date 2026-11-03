@@ -24,15 +24,17 @@ Need a DAW? You don't. Harmonia *is* the sound engine, the sequencer, and the ma
 
 ## Hear it first
 
-No build required — two unedited renders straight out of the engine:
+**[▶ Open the listening room — jpalmer95.github.io/harmonia](https://jpalmer95.github.io/harmonia/samples/)**
+— plays in the browser, no clone, no build, no download prompts.
 
 | Sample | What it is |
 |---|---|
-| [▶ bach_meets_vangelis.mp3](samples/bach_meets_vangelis.mp3) (0:24) | Morphing-index FM brass in a cathedral |
-| [▶ neon_organum.mp3](samples/neon_organum.mp3) (0:25) | Sustained organ pad, dense harmonic series, shimmer tail |
+| [▶ bach_meets_vangelis](https://jpalmer95.github.io/harmonia/samples/#bach) (0:24) | Morphing-index FM brass in a cathedral |
+| [▶ neon_organum](https://jpalmer95.github.io/harmonia/samples/#neon) (0:25) | Sustained organ pad, dense harmonic series, shimmer tail |
 
 Both are `harmonia render <id>` output, no outside instruments or samples. Provenance, specs and
-hi-def regeneration: **[samples/README.md](samples/README.md)**.
+hi-def regeneration: **[samples/README.md](samples/README.md)**. The page is `samples/index.html`
+— static, no build step, published by GitHub Pages from `main`.
 
 ## Is there a UI?
 
