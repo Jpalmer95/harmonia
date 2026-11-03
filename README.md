@@ -22,6 +22,18 @@ cargo run --release -- serve --port 8765   # http://127.0.0.1:8765  ← the tink
 
 Need a DAW? You don't. Harmonia *is* the sound engine, the sequencer, and the mastering chain.
 
+## Hear it first
+
+No build required — two unedited renders straight out of the engine:
+
+| Sample | What it is |
+|---|---|
+| [▶ bach_meets_vangelis.mp3](samples/bach_meets_vangelis.mp3) (0:24) | Morphing-index FM brass in a cathedral |
+| [▶ neon_organum.mp3](samples/neon_organum.mp3) (0:25) | Sustained organ pad, dense harmonic series, shimmer tail |
+
+Both are `harmonia render <id>` output, no outside instruments or samples. Provenance, specs and
+hi-def regeneration: **[samples/README.md](samples/README.md)**.
+
 ## Is there a UI?
 
 **Yes.** `harmonia serve` is the playground: flagship compositions, a chord keyboard, FM 6×6 matrix, DX7 algorithm picker, math formulas, Scala tunings, live 24-bit render + HTML5 audio. Tabs:

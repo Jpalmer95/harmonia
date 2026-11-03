@@ -6,6 +6,8 @@ Hi-def 6-operator FM matrix synth, symbolic math DSP, and multiline chord workst
 
 - Repo: this directory. Binary: `cargo run --release -- <subcommand>` or `./target/release/harmonia`.
 - JSON under `presets/` is the database. WAV under `renders/` is **derived** — never commit large WAVs.
+  The only committed audio is `samples/*.mp3` (192 kbps demo renders + `samples/README.md` provenance);
+  samples must be pure Harmonia output, so externally extended tracks (Suno etc.) stay out.
 - Never add audio crates unless a measured bottleneck exists (house style: stdlib-only DSP).
 - Hermes skill: `harmonia-music` — load it before composing or rendering.
 - License: Apache-2.0 (`LICENSE`, `Cargo.toml`). Do not revert to MIT.

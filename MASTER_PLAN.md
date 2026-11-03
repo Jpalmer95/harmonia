@@ -25,11 +25,14 @@ Hi-def sounds and music: 6-op FM, live math equations, multiline chord weaves.
 - [x] Visible library-save feedback (toast + tab switch); formula lint; patch picker; MIDI export; spec undo; limiter/normalize/dither; analyze chip confidence
 - [x] Library cards are interactive (play / edit in playground / download / delete); save-this-WAV lives under the telemetry player
 - [x] Hear-while-building: `/api/preview` ~1s pad of one chord/note; chip ♪; does not replace full Render
+- [x] `samples/` — two 24-bit Harmonia renders (bach_meets_vangelis, neon_organum) as 192 kbps MP3 with provenance in samples/README.md
 
 ## Decisions
 
 - Stdlib-only DSP (house style: prove bottleneck before deps). MIDI/Scala/DX7/KS are in-tree modules, not crates.
-- Canonical JSON specs; WAV is derived; do not commit large renders.
+- Canonical JSON specs; WAV is derived; do not commit large renders — the only committed audio is
+  `samples/*.mp3` (small, lossy, demo-only; hi-def stays regenerable).
+- Samples must be pure Harmonia output: externally extended tracks (Suno etc.) stay out of the repo.
 - BYOC: no cloud synths, no paid audio APIs.
 - Independent of DJ-JK / music-catalog (contract via WAV + JSON, not a monolith).
 - DX7 tables are public routing graphs, not ROM samples.
