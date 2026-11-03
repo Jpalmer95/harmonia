@@ -229,22 +229,37 @@ const cards = [...document.querySelectorAll('.card')].map(card => {
     }
     return {w, h, dpr};
   }
+  // Downsample to one bar per ~2.4 CSS px so narrow screens get bars, not sub-pixel slivers.
+  function resample(w){
+    const target = Math.max(48, Math.floor(w/2.4));
+    if (peaks.length <= target) return peaks;
+    const out = new Array(target), step = peaks.length/target;
+    for (let i=0;i<target;i++){
+      const a = Math.floor(i*step), b = Math.max(a+1, Math.floor((i+1)*step));
+      let m = 0;
+      for (let j=a;j<b && j<peaks.length;j++) if (peaks[j] > m) m = peaks[j];
+      out[i] = m;
+    }
+    return out;
+  }
   function draw(){
     const {w,h,dpr} = size();
+    if (!w || !h) return;
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,w,h);
-    const n = peaks.length, mid = h/2;
+    const bars = resample(w), n = bars.length, mid = h/2;
     const prog = dur > 0 ? Math.min(1, (audio.currentTime || 0)/dur) : 0;
-    const bw = w/n, gap = Math.max(bw*0.28, 0.6);
+    const bw = w/n, gap = Math.max(bw*0.3, 0.7);
+    const barW = Math.max(bw-gap, 1);
+    // A negative corner radius throws inside roundRect and silently kills the whole
+    // waveform on narrow viewports — clamp it rather than trusting the gap math.
+    const r = Math.max(0, Math.min((bw-gap)/2, 2));
     for (let i=0;i<n;i++){
-      const v = peaks[i];
-      const bh = Math.max(1.4, Math.pow(v,0.72) * (h*0.92));
-      const x = i*bw;
+      const bh = Math.max(1.4, Math.pow(bars[i],0.72) * (h*0.92));
       const played = (i+0.5)/n <= prog;
       ctx.fillStyle = played ? accent : 'rgba(255,255,255,.15)';
       if (played) { ctx.shadowColor = accent; ctx.shadowBlur = 8; } else ctx.shadowBlur = 0;
-      const r = Math.min((bw-gap)/2, 2);
-      roundRect(x + gap/2, mid - bh/2, Math.max(bw-gap, 1), bh, r);
+      roundRect(i*bw + gap/2, mid - bh/2, barW, bh, r);
     }
     ctx.shadowBlur = 0;
   }
@@ -283,7 +298,9 @@ const cards = [...document.querySelectorAll('.card')].map(card => {
   });
 
   addEventListener('resize', draw);
+  if ('ResizeObserver' in window) new ResizeObserver(() => draw()).observe(canvas);
   requestAnimationFrame(draw);
+  document.fonts && document.fonts.ready.then(draw);
   return {card, audio, draw};
 });
 
